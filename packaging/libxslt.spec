@@ -6,6 +6,7 @@ Group:      System/Libraries
 License:    MIT
 URL:        http://xmlsoft.org/XSLT/
 Source0:    %{name}-%{version}.tar.gz
+Source1001: packaging/libxslt.manifest 
 Patch0:     libxslt-build.patch
 Requires(post): /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
@@ -38,6 +39,7 @@ installed.
 %patch0 -p1
 
 %build
+cp %{SOURCE1001} .
 
 ./configure --disable-static --prefix=/usr
 
@@ -55,6 +57,7 @@ rm -rf %{buildroot}
 %postun -p /sbin/ldconfig
 
 %files
+%manifest libxslt.manifest
 %defattr(-,root,root,-)
 %{_libdir}/lib*.so.*
 #%{_libdir}/libxslt-plugins
@@ -71,6 +74,7 @@ rm -rf %{buildroot}
 %{_bindir}/xsltproc
 
 %files devel
+%manifest libxslt.manifest
 %defattr(-,root,root,-)
 %{_libdir}/lib*.so
 %{_libdir}/*.sh
