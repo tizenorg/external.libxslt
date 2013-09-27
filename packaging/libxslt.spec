@@ -50,6 +50,10 @@ rm -rf %{buildroot}
 
 %remove_docs
 
+# license
+mkdir -p %{buildroot}/usr/share/license
+cp COPYING %{buildroot}/usr/share/license/%{name}
+
 %post -p /sbin/ldconfig
 
 %postun -p /sbin/ldconfig
@@ -69,6 +73,7 @@ rm -rf %{buildroot}
 %{_libdir}/python2.7/site-packages/libxsltmod.so
 
 %{_bindir}/xsltproc
+/usr/share/license/%{name}
 
 %files devel
 %defattr(-,root,root,-)
