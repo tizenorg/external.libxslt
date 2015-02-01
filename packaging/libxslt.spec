@@ -1,3 +1,4 @@
+#sbs-git:slp/unmodified/libxslt libxslt 1.1.16 64ded0203040e8a50821c584ba754b988fc2ad6b
 Name:       libxslt
 Summary:    Library providing the Gnome XSLT engine
 Version: 1.1.16
@@ -7,6 +8,7 @@ License:    MIT
 URL:        http://xmlsoft.org/XSLT/
 Source0:    %{name}-%{version}.tar.gz
 Patch0:     libxslt-build.patch
+Patch10:    libxslt-python-site-packages64.patch
 Requires(post): /sbin/ldconfig
 Requires(postun): /sbin/ldconfig
 BuildRequires:  pkgconfig(libxml-2.0) >= 2.6.27
@@ -31,29 +33,47 @@ This C library allows to transform XML files into other XML files
 mechanism. To use it you need to have a version of libxml2 >= 2.6.27
 installed.
 
+
+%package python
+Summary: Python bindings for the libxslt library
+Group: Development/Libraries
+Requires: libxslt = %{version}
+Requires: libxml2 >= 2.6.5
+Requires: libxml2-python >= 2.6.5
+Requires: python
+
+%description python
+The libxslt-python package contains a module that permits applications
+written in the Python programming language to use the interface
+supplied by the libxslt library to apply XSLT transformations.
+
+This library allows to parse sytlesheets, uses the libxml2-python
+to load and save XML and HTML files. Direct access to XPath and
+the XSLT transformation context are possible to extend the XSLT language
+with XPath functions written in Python.
+
+
 %prep
 %setup -q
 
 # libxslt-build.patch
 %patch0 -p1
+%patch10 -p1
 
 %build
 
-./configure --disable-static --prefix=/usr
+%configure --disable-static --with-python=/usr
 
 make %{?jobs:-j%jobs}
 
 %install
 rm -rf %{buildroot}
+mkdir -p %{buildroot}/usr/share/license
+cp COPYING %{buildroot}/usr/share/license/%{name}
 
 %make_install
 
 %remove_docs
-
-# license
-mkdir -p %{buildroot}/usr/share/license
-cp COPYING %{buildroot}/usr/share/license/%{name}
-cp COPYING %{buildroot}/usr/share/license/%{name}-devel
 
 %post -p /sbin/ldconfig
 
@@ -61,18 +81,8 @@ cp COPYING %{buildroot}/usr/share/license/%{name}-devel
 
 %files
 %defattr(-,root,root,-)
+%manifest libxslt.manifest
 %{_libdir}/lib*.so.*
-#%{_libdir}/libxslt-plugins
-#%{_libdir}/python2.6/site-packages/libxslt.py
-#%{_libdir}/python2.6/site-packages/libxslt.pyc
-#%{_libdir}/python2.6/site-packages/libxslt.pyo
-#%{_libdir}/python2.6/site-packages/libxsltmod.so
-
-%{_libdir}/python2.7/site-packages/libxslt.py
-#%{_libdir}/python2.7/site-packages/libxslt.pyc
-#%{_libdir}/python2.7/site-packages/libxslt.pyo
-%{_libdir}/python2.7/site-packages/libxsltmod.so
-
 %{_bindir}/xsltproc
 /usr/share/license/%{name}
 
@@ -85,5 +95,9 @@ cp COPYING %{buildroot}/usr/share/license/%{name}-devel
 /usr/bin/xslt-config
 %{_libdir}/pkgconfig/libxslt.pc
 %{_libdir}/pkgconfig/libexslt.pc
-/usr/share/license/%{name}-devel
 
+%files python
+%defattr(-,root,root,-)
+%manifest libxslt.manifest
+%{python_sitelib}/libxslt.py
+%{python_sitelib}/libxsltmod.so
