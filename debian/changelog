@@ -1,9 +1,9 @@
-libxslt (1.1.16-1) unstable; urgency=low
+libxslt (1.1.16-1slp2+s1) unstable; urgency=low
 
-  * Git : unmodified/libxslt
-  * Tag : libxslt1.1.16-1 
+  * SLP: drop building packages for python
+  * Set myself as SLP maintainer.
 
- -- Jongseok Yang <js45.yang@samsung.com>  Mon, 09 Jan 2012 11:52:33 +0900
+ -- Rafal Krypa <r.krypa@samsung.com>  Tue, 21 Sep 2010 00:37:35 +0900
 
 libxslt (1.1.16-1) unstable; urgency=low
 
