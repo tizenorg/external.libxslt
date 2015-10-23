@@ -8,10 +8,10 @@
 #include <libxslt/xsltconfig.h>
 #include <libxslt/extensions.h>
 
-#include "exsltconfig.h"
+#include <libexslt/exsltconfig.h>
 #include "exslt.h"
 
-const char *exsltLibraryVersion = LIBEXSLT_VERSION_STRING 
+const char *exsltLibraryVersion = LIBEXSLT_VERSION_STRING
 				LIBEXSLT_VERSION_EXTRA;
 const int exsltLibexsltVersion = LIBEXSLT_VERSION;
 const int exsltLibxsltVersion = LIBXSLT_VERSION;
@@ -24,6 +24,7 @@ const int exsltLibxmlVersion = LIBXML_VERSION;
  */
 void
 exsltRegisterAll (void) {
+    xsltInitGlobals();
     exsltCommonRegister();
 #ifdef EXSLT_CRYPTO_ENABLED
     exsltCryptoRegister();

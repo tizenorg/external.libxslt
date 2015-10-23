@@ -74,11 +74,11 @@ exsltDynEvaluateFunction(xmlXPathParserContextPtr ctxt, int nargs) {
 	ret = xmlXPathEval(str,ctxt->context);
 	if (ret)
 		valuePush(ctxt,ret);
- 	else {
+	else {
 		xsltGenericError(xsltGenericErrorContext,
 			"dyn:evaluate() : unable to evaluate expression '%s'\n",str);
 		valuePush(ctxt,xmlXPathNewNodeSet(NULL));
-	}	
+	}
 	xmlFree(str);
 	return;
 }
@@ -98,9 +98,10 @@ exsltDynMapFunction(xmlXPathParserContextPtr ctxt, int nargs)
 {
     xmlChar *str = NULL;
     xmlNodeSetPtr nodeset = NULL;
+    xsltTransformContextPtr tctxt;
     xmlXPathCompExprPtr comp = NULL;
     xmlXPathObjectPtr ret = NULL;
-    xmlDocPtr oldDoc, container;
+    xmlDocPtr oldDoc, container = NULL;
     xmlNodePtr oldNode;
     int oldContextSize;
     int oldProximityPosition;
@@ -134,7 +135,7 @@ exsltDynMapFunction(xmlXPathParserContextPtr ctxt, int nargs)
     ret = xmlXPathNewNodeSet(NULL);
     if (ret == NULL) {
         xsltGenericError(xsltGenericErrorContext,
-                         "exsltDynMapFunctoin: ret == NULL\n");
+                         "exsltDynMapFunction: ret == NULL\n");
         goto cleanup;
     }
 
@@ -143,14 +144,23 @@ exsltDynMapFunction(xmlXPathParserContextPtr ctxt, int nargs)
     oldContextSize = ctxt->context->contextSize;
     oldProximityPosition = ctxt->context->proximityPosition;
 
-        /** 
-	 * since we really don't know we're going to be adding node(s) 
-	 * down the road we create the RVT regardless 
+        /**
+	 * since we really don't know we're going to be adding node(s)
+	 * down the road we create the RVT regardless
 	 */
-    container = xsltCreateRVT(xsltXPathGetTransformContext(ctxt));
-    if (container != NULL)
-        xsltRegisterTmpRVT(xsltXPathGetTransformContext(ctxt), container);
-
+    tctxt = xsltXPathGetTransformContext(ctxt);
+    if (tctxt == NULL) {
+	xsltTransformError(xsltXPathGetTransformContext(ctxt), NULL, NULL,
+	      "dyn:map : internal error tctxt == NULL\n");
+	goto cleanup;
+    }
+    container = xsltCreateRVT(tctxt);
+    if (container == NULL) {
+	xsltTransformError(tctxt, NULL, NULL,
+	      "dyn:map : internal error container == NULL\n");
+	goto cleanup;
+    }
+    xsltRegisterLocalRVT(tctxt, container);
     if (nodeset && nodeset->nodeNr > 0) {
         xmlXPathNodeSetSort(nodeset);
         ctxt->context->contextSize = nodeset->nodeNr;
@@ -189,6 +199,7 @@ exsltDynMapFunction(xmlXPathParserContextPtr ctxt, int nargs)
                                 xmlXPathNodeSetAddUnique(ret->nodesetval,
                                                          cur);
                             }
+			    xsltExtensionInstructionResultRegister(tctxt, ret);
                         }
                         break;
                     case XPATH_NUMBER:
@@ -211,6 +222,7 @@ exsltDynMapFunction(xmlXPathParserContextPtr ctxt, int nargs)
                                 xmlXPathNodeSetAddUnique(ret->nodesetval,
                                                          cur);
                             }
+			    xsltExtensionInstructionResultRegister(tctxt, ret);
                         }
                         break;
                     case XPATH_STRING:
@@ -228,6 +240,7 @@ exsltDynMapFunction(xmlXPathParserContextPtr ctxt, int nargs)
                                 xmlXPathNodeSetAddUnique(ret->nodesetval,
                                                          cur);
                             }
+			    xsltExtensionInstructionResultRegister(tctxt, ret);
                         }
                         break;
 		    default:

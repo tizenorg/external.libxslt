@@ -28,8 +28,10 @@
 #include "config.h"
 #endif
 
-#if HAVE_LOCALTIME_R	/* _POSIX_SOURCE required by gnu libc */
+#if defined(HAVE_LOCALTIME_R) && defined(__GLIBC__)	/* _POSIX_SOURCE required by gnu libc */
+#ifndef _AIX51		/* but on AIX we're not using gnu libc */
 #define _POSIX_SOURCE
+#endif
 #endif
 
 #include <libxml/tree.h>
@@ -89,8 +91,7 @@ struct _exsltDateValDate {
     unsigned int	min	:6;	/* 0 <=  min    <= 59	*/
     double		sec;
     unsigned int	tz_flag	:1;	/* is tzo explicitely set? */
-    signed int		tzo	:12;	/* -1440 <= tzo <= 1440
-    					   currently only -840 to +840 are needed */
+    signed int		tzo	:12;	/* -1440 <= tzo <= 1440 currently only -840 to +840 are needed */
 };
 
 /* Duration value */
@@ -98,7 +99,7 @@ typedef struct _exsltDateValDuration exsltDateValDuration;
 typedef exsltDateValDuration *exsltDateValDurationPtr;
 struct _exsltDateValDuration {
     long	        mon;		/* mon stores years also */
-    long        	day;
+    long	day;
     double		sec;            /* sec stores min and hour also */
 };
 
@@ -118,7 +119,7 @@ struct _exsltDateVal {
  *								*
  ****************************************************************/
 
-#if defined(HAVE_TIME_H) 					\
+#if defined(HAVE_TIME_H)					\
     && (defined(HAVE_LOCALTIME) || defined(HAVE_LOCALTIME_R))	\
     && (defined(HAVE_GMTIME) || defined(HAVE_GMTIME_R))		\
     && defined(HAVE_TIME)
@@ -745,14 +746,9 @@ exsltDateFreeDate (exsltDateValPtr date) {
 static exsltDateValPtr
 exsltDateCurrent (void)
 {
-    struct tm *localTm, *gmTm;
+    struct tm localTm, gmTm;
     time_t secs;
-#if HAVE_LOCALTIME_R
-    struct tm localTmS;
-#endif
-#if HAVE_GMTIME_R
-    struct tm gmTmS;
-#endif
+    int local_s, gm_s;
     exsltDateValPtr ret;
 
     ret = exsltDateCreateDate(XS_DATETIME);
@@ -762,36 +758,59 @@ exsltDateCurrent (void)
     /* get current time */
     secs    = time(NULL);
 #if HAVE_LOCALTIME_R
-    localtime_r(&secs, &localTmS);
-    localTm = &localTmS;
+    localtime_r(&secs, &localTm);
 #else
-    localTm = localtime(&secs);
+    localTm = *localtime(&secs);
 #endif
 
     /* get real year, not years since 1900 */
-    ret->value.date.year = localTm->tm_year + 1900;
+    ret->value.date.year = localTm.tm_year + 1900;
 
-    ret->value.date.mon  = localTm->tm_mon + 1;
-    ret->value.date.day  = localTm->tm_mday;
-    ret->value.date.hour = localTm->tm_hour;
-    ret->value.date.min  = localTm->tm_min;
+    ret->value.date.mon  = localTm.tm_mon + 1;
+    ret->value.date.day  = localTm.tm_mday;
+    ret->value.date.hour = localTm.tm_hour;
+    ret->value.date.min  = localTm.tm_min;
 
     /* floating point seconds */
-    ret->value.date.sec  = (double) localTm->tm_sec;
+    ret->value.date.sec  = (double) localTm.tm_sec;
 
     /* determine the time zone offset from local to gm time */
 #if HAVE_GMTIME_R
-    gmtime_r(&secs, &gmTmS);
-    gmTm = &gmTmS;
+    gmtime_r(&secs, &gmTm);
 #else
-    gmTm = gmtime(&secs);
+    gmTm = *gmtime(&secs);
 #endif
     ret->value.date.tz_flag = 0;
+#if 0
     ret->value.date.tzo = (((ret->value.date.day * 1440) +
                             (ret->value.date.hour * 60) +
                              ret->value.date.min) -
-                           ((gmTm->tm_mday * 1440) + (gmTm->tm_hour * 60) +
-                             gmTm->tm_min));
+                           ((gmTm.tm_mday * 1440) + (gmTm.tm_hour * 60) +
+                             gmTm.tm_min));
+#endif
+    local_s = localTm.tm_hour * SECS_PER_HOUR +
+        localTm.tm_min * SECS_PER_MIN +
+        localTm.tm_sec;
+
+    gm_s = gmTm.tm_hour * SECS_PER_HOUR +
+        gmTm.tm_min * SECS_PER_MIN +
+        gmTm.tm_sec;
+
+    if (localTm.tm_year < gmTm.tm_year) {
+	ret->value.date.tzo = -((SECS_PER_DAY - local_s) + gm_s)/60;
+    } else if (localTm.tm_year > gmTm.tm_year) {
+	ret->value.date.tzo = ((SECS_PER_DAY - gm_s) + local_s)/60;
+    } else if (localTm.tm_mon < gmTm.tm_mon) {
+	ret->value.date.tzo = -((SECS_PER_DAY - local_s) + gm_s)/60;
+    } else if (localTm.tm_mon > gmTm.tm_mon) {
+	ret->value.date.tzo = ((SECS_PER_DAY - gm_s) + local_s)/60;
+    } else if (localTm.tm_mday < gmTm.tm_mday) {
+	ret->value.date.tzo = -((SECS_PER_DAY - local_s) + gm_s)/60;
+    } else if (localTm.tm_mday > gmTm.tm_mday) {
+	ret->value.date.tzo = ((SECS_PER_DAY - gm_s) + local_s)/60;
+    } else  {
+	ret->value.date.tzo = (local_s - gm_s)/60;
+    }
 
     return ret;
 }
@@ -1092,9 +1111,9 @@ exsltDateFormatDuration (const exsltDateValDurationPtr dt)
 	return NULL;
 
     /* quick and dirty check */
-    if ((dt->sec == 0.0) && (dt->day == 0) && (dt->mon == 0)) 
+    if ((dt->sec == 0.0) && (dt->day == 0) && (dt->mon == 0))
         return xmlStrdup((xmlChar*)"P0D");
-        
+
     secs   = dt->sec;
     days   = (double)dt->day;
     years  = (double)(dt->mon / 12);
@@ -1104,15 +1123,15 @@ exsltDateFormatDuration (const exsltDateValDurationPtr dt)
     if (secs < 0.0) {
         secs = -secs;
         *cur = '-';
-    } 
+    }
     if (days < 0) {
         days = -days;
         *cur = '-';
-    } 
+    }
     if (years < 0) {
         years = -years;
         *cur = '-';
-    } 
+    }
     if (months < 0) {
         months = -months;
         *cur = '-';
@@ -1282,7 +1301,7 @@ exsltDateFormat (const exsltDateValPtr dt)
  * _exsltDateCastYMToDays:
  * @dt: an #exsltDateValPtr
  *
- * Convert mon and year of @dt to total number of days. Take the 
+ * Convert mon and year of @dt to total number of days. Take the
  * number of years since (or before) 1 AD and add the number of leap
  * years. This is a function  because negative
  * years must be handled a little differently and there is no zero year.
@@ -1395,7 +1414,7 @@ _exsltDateTruncateDate (exsltDateValPtr dt, exsltDateType type)
  * @yr: year
  *
  * Determine the day-in-week from @yday and @yr. 0001-01-01 was
- * a Monday so all other days are calculated from there. Take the 
+ * a Monday so all other days are calculated from there. Take the
  * number of years since (or before) add the number of leap years and
  * the day-in-year and mod by 7. This is a function  because negative
  * years must be handled a little differently and there is no zero year.
@@ -1409,7 +1428,7 @@ _exsltDateDayInWeek(long yday, long yr)
 
     if (yr < 0) {
         ret = ((yr + (((yr+1)/4)-((yr+1)/100)+((yr+1)/400)) + yday) % 7);
-        if (ret < 0) 
+        if (ret < 0)
             ret += 7;
     } else
         ret = (((yr-1) + (((yr-1)/4)-((yr-1)/100)+((yr-1)/400)) + yday) % 7);
@@ -1523,7 +1542,7 @@ _exsltDateAdd (exsltDateValPtr dt, exsltDateValPtr dur)
             if (tyr == 0)
                 tyr--;
 	    /*
-	     * Coverity detected an overrun in daysInMonth 
+	     * Coverity detected an overrun in daysInMonth
 	     * of size 12 at position 12 with index variable "((r)->mon - 1)"
 	     */
 	    if (tmon < 0)
@@ -1548,7 +1567,7 @@ _exsltDateAdd (exsltDateValPtr dt, exsltDateValPtr dur)
                 r->year++;
 	}
     }
-    
+
     r->day = tempdays;
 
     /*
@@ -1558,7 +1577,7 @@ _exsltDateAdd (exsltDateValPtr dt, exsltDateValPtr dur)
         if ((r->hour) || (r->min) || (r->sec))
             ret->type = XS_DATETIME;
         else if (ret->type != XS_DATE) {
-            if ((r->mon != 1) && (r->day != 1))
+            if (r->day != 1)
                 ret->type = XS_DATE;
             else if ((ret->type != XS_GYEARMONTH) && (r->mon != 1))
                 ret->type = XS_GYEARMONTH;
@@ -1583,7 +1602,7 @@ exsltDateNormalize (exsltDateValPtr dt)
     if (dt == NULL)
         return;
 
-    if (((dt->type & XS_TIME) != XS_TIME) || (dt->value.date.tzo == 0))
+    if (((dt->type & XS_TIME) != XS_TIME) && (dt->value.date.tzo == 0))
         return;
 
     dur = exsltDateCreateDate(XS_DURATION);
@@ -1623,7 +1642,7 @@ _exsltDateDifference (exsltDateValPtr x, exsltDateValPtr y, int flag)
         return NULL;
 
     if (((x->type < XS_GYEAR) || (x->type > XS_DATETIME)) ||
-        ((y->type < XS_GYEAR) || (y->type > XS_DATETIME))) 
+        ((y->type < XS_GYEAR) || (y->type > XS_DATETIME)))
         return NULL;
 
     exsltDateNormalize(x);
@@ -1760,7 +1779,7 @@ _exsltDateAddDuration (exsltDateValPtr x, exsltDateValPtr y)
  *
  * Implements the EXSLT - Dates and Times date-time() function:
  *     string date:date-time()
- * 
+ *
  * Returns the current date and time as a date/time string.
  */
 static xmlChar *
@@ -1786,7 +1805,7 @@ exsltDateDateTime (void)
  *
  * Implements the EXSLT - Dates and Times date() function:
  *     string date:date (string?)
- * 
+ *
  * Returns the date specified in the date/time string given as the
  * argument.  If no argument is given, then the current local
  * date/time, as returned by date:date-time is used as a default
@@ -1830,7 +1849,7 @@ exsltDateDate (const xmlChar *dateTime)
  *
  * Implements the EXSLT - Dates and Times time() function:
  *     string date:time (string?)
- * 
+ *
  * Returns the time specified in the date/time string given as the
  * argument.  If no argument is given, then the current local
  * date/time, as returned by date:date-time is used as a default
@@ -2124,7 +2143,7 @@ static double
 exsltDateWeekInYear (const xmlChar *dateTime)
 {
     exsltDateValPtr dt;
-    long fdiy, fdiw, ret;
+    long diy, diw, year, ret;
 
     if (dateTime == NULL) {
 #ifdef WITH_TIME
@@ -2142,20 +2161,26 @@ exsltDateWeekInYear (const xmlChar *dateTime)
 	}
     }
 
-    fdiy = DAY_IN_YEAR(1, 1, dt->value.date.year);
-    
+    diy = DAY_IN_YEAR(dt->value.date.day, dt->value.date.mon,
+                      dt->value.date.year);
+
     /*
      * Determine day-in-week (0=Sun, 1=Mon, etc.) then adjust so Monday
      * is the first day-in-week
      */
-    fdiw = (_exsltDateDayInWeek(fdiy, dt->value.date.year) + 6) % 7;
-
-    ret = (DAY_IN_YEAR(dt->value.date.day, dt->value.date.mon,
-                      dt->value.date.year) + fdiw) / 7;
+    diw = (_exsltDateDayInWeek(diy, dt->value.date.year) + 6) % 7;
 
     /* ISO 8601 adjustment, 3 is Thu */
-    if (fdiw <= 3)
-	ret += 1;
+    diy += (3 - diw);
+    if(diy < 1) {
+	year = dt->value.date.year - 1;
+	if(year == 0) year--;
+	diy = DAY_IN_YEAR(31, 12, year) + diy;
+    } else if (diy > (long)DAY_IN_YEAR(31, 12, dt->value.date.year)) {
+	diy -= DAY_IN_YEAR(31, 12, dt->value.date.year);
+    }
+
+    ret = ((diy - 1) / 7) + 1;
 
     exsltDateFreeDate(dt);
 
@@ -2605,7 +2630,7 @@ exsltDateMinuteInHour (const xmlChar *dateTime)
  *  - xs:time (hh:mm:ss)
  * If the date/time string is not in one of these formats, then NaN is
  * returned.
- * 
+ *
  * Returns the second or NaN.
  */
 static double
@@ -2642,21 +2667,21 @@ exsltDateSecondInMinute (const xmlChar *dateTime)
  * @ystr: date/time string
  *
  * Implements the date:add (string,string) function which returns the
- * date/time * resulting from adding a duration to a date/time. 
+ * date/time * resulting from adding a duration to a date/time.
  * The first argument (@xstr) must be right-truncated date/time
  * strings in one of the formats defined in [XML Schema Part 2:
- * Datatypes]. The permitted formats are as follows: 
- *  - xs:dateTime (CCYY-MM-DDThh:mm:ss) 
- *  - xs:date (CCYY-MM-DD) 
- *  - xs:gYearMonth (CCYY-MM) 
- *  - xs:gYear (CCYY) 
+ * Datatypes]. The permitted formats are as follows:
+ *  - xs:dateTime (CCYY-MM-DDThh:mm:ss)
+ *  - xs:date (CCYY-MM-DD)
+ *  - xs:gYearMonth (CCYY-MM)
+ *  - xs:gYear (CCYY)
  * The second argument (@ystr) is a string in the format defined for
- * xs:duration in [3.2.6 duration] of [XML Schema Part 2: Datatypes]. 
+ * xs:duration in [3.2.6 duration] of [XML Schema Part 2: Datatypes].
  * The return value is a right-truncated date/time strings in one of
  * the formats defined in [XML Schema Part 2: Datatypes] and listed
  * above. This value is calculated using the algorithm described in
  * [Appendix E Adding durations to dateTimes] of [XML Schema Part 2:
- * Datatypes]. 
+ * Datatypes].
 
  * Returns date/time string or NULL.
  */
@@ -2664,7 +2689,7 @@ static xmlChar *
 exsltDateAdd (const xmlChar *xstr, const xmlChar *ystr)
 {
     exsltDateValPtr dt, dur, res;
-    xmlChar     *ret;   
+    xmlChar     *ret;
 
     if ((xstr == NULL) || (ystr == NULL))
         return NULL;
@@ -2703,18 +2728,18 @@ exsltDateAdd (const xmlChar *xstr, const xmlChar *ystr)
  * @ystr:      second duration string
  *
  * Implements the date:add-duration (string,string) function which returns
- * the duration resulting from adding two durations together. 
+ * the duration resulting from adding two durations together.
  * Both arguments are strings in the format defined for xs:duration
  * in [3.2.6 duration] of [XML Schema Part 2: Datatypes]. If either
  * argument is not in this format, the function returns an empty string
- * (''). 
+ * ('').
  * The return value is a string in the format defined for xs:duration
- * in [3.2.6 duration] of [XML Schema Part 2: Datatypes]. 
+ * in [3.2.6 duration] of [XML Schema Part 2: Datatypes].
  * The durations can usually be added by summing the numbers given for
  * each of the components in the durations. However, if the durations
  * are differently signed, then this sometimes results in durations
  * that are impossible to express in this syntax (e.g. 'P1M' + '-P1D').
- * In these cases, the function returns an empty string (''). 
+ * In these cases, the function returns an empty string ('').
  *
  * Returns duration string or NULL.
  */
@@ -2722,7 +2747,7 @@ static xmlChar *
 exsltDateAddDuration (const xmlChar *xstr, const xmlChar *ystr)
 {
     exsltDateValPtr x, y, res;
-    xmlChar     *ret;   
+    xmlChar     *ret;
 
     if ((xstr == NULL) || (ystr == NULL))
         return NULL;
@@ -2755,18 +2780,18 @@ exsltDateAddDuration (const xmlChar *xstr, const xmlChar *ystr)
  * exsltDateSumFunction:
  * @ns:      a node set of duration strings
  *
- * The date:sum function adds a set of durations together. 
- * The string values of the nodes in the node set passed as an argument 
- * are interpreted as durations and added together as if using the 
+ * The date:sum function adds a set of durations together.
+ * The string values of the nodes in the node set passed as an argument
+ * are interpreted as durations and added together as if using the
  * date:add-duration function. (from exslt.org)
  *
  * The return value is a string in the format defined for xs:duration
- * in [3.2.6 duration] of [XML Schema Part 2: Datatypes]. 
+ * in [3.2.6 duration] of [XML Schema Part 2: Datatypes].
  * The durations can usually be added by summing the numbers given for
  * each of the components in the durations. However, if the durations
  * are differently signed, then this sometimes results in durations
  * that are impossible to express in this syntax (e.g. 'P1M' + '-P1D').
- * In these cases, the function returns an empty string (''). 
+ * In these cases, the function returns an empty string ('').
  *
  * Returns duration string or NULL.
  */
@@ -2810,7 +2835,7 @@ exsltDateSumFunction (xmlXPathParserContextPtr ctxt, int nargs)
     }
 
     for (i = 0; i < ns->nodeNr; i++) {
-    	int result;
+	int result;
 	tmp = xmlXPathCastNodeToString (ns->nodeTab[i]);
 	if (tmp == NULL) {
 	    xmlXPathFreeNodeSet (ns);
@@ -2863,13 +2888,13 @@ exsltDateSumFunction (xmlXPathParserContextPtr ctxt, int nargs)
  * local date/time, as returned by exsltDateCurrent() is used as the
  * default argument. If the date/time string is a xs:duration, then the
  * years and months must be zero (or not present). Parsing a duration
- * converts the fields to seconds. If the date/time string is not a 
+ * converts the fields to seconds. If the date/time string is not a
  * duration (and not null), then the legal formats are:
  *  - xs:dateTime (CCYY-MM-DDThh:mm:ss)
  *  - xs:date     (CCYY-MM-DD)
  *  - xs:gYearMonth (CCYY-MM)
  *  - xs:gYear      (CCYY)
- * In these cases the difference between the @dateTime and 
+ * In these cases the difference between the @dateTime and
  * 1970-01-01T00:00:00Z is calculated and converted to seconds.
  *
  * Note that there was some confusion over whether "difference" meant
@@ -2917,7 +2942,7 @@ exsltDateSeconds (const xmlChar *dateTime)
 
             dur = _exsltDateDifference(y, dt, 1);
             if (dur != NULL) {
-                ret = exsltDateCastDateToNumber(dur); 
+                ret = exsltDateCastDateToNumber(dur);
                 exsltDateFreeDate(dur);
             }
             exsltDateFreeDate(y);
@@ -2945,26 +2970,26 @@ exsltDateSeconds (const xmlChar *dateTime)
  * 2: Datatypes]. The date/time with the most specific format (i.e. the
  * least truncation) is converted into the same format as the date with
  * the least specific format (i.e. the most truncation). The permitted
- * formats are as follows, from most specific to least specific: 
- *  - xs:dateTime (CCYY-MM-DDThh:mm:ss) 
- *  - xs:date (CCYY-MM-DD) 
- *  - xs:gYearMonth (CCYY-MM) 
- *  - xs:gYear (CCYY) 
+ * formats are as follows, from most specific to least specific:
+ *  - xs:dateTime (CCYY-MM-DDThh:mm:ss)
+ *  - xs:date (CCYY-MM-DD)
+ *  - xs:gYearMonth (CCYY-MM)
+ *  - xs:gYear (CCYY)
  * If either of the arguments is not in one of these formats,
- * date:difference returns the empty string (''). 
+ * date:difference returns the empty string ('').
  * The difference between the date/times is returned as a string in the
  * format defined for xs:duration in [3.2.6 duration] of [XML Schema
- * Part 2: Datatypes]. 
+ * Part 2: Datatypes].
  * If the date/time string with the least specific format is in either
  * xs:gYearMonth or xs:gYear format, then the number of days, hours,
  * minutes and seconds in the duration string must be equal to zero.
  * (The format of the string will be PnYnM.) The number of months
- * specified in the duration must be less than 12. 
+ * specified in the duration must be less than 12.
  * Otherwise, the number of years and months in the duration string
  * must be equal to zero. (The format of the string will be
  * PnDTnHnMnS.) The number of seconds specified in the duration string
  * must be less than 60; the number of minutes must be less than 60;
- * the number of hours must be less than 24. 
+ * the number of hours must be less than 24.
  *
  * Returns duration string or NULL.
  */
@@ -2972,7 +2997,7 @@ static xmlChar *
 exsltDateDifference (const xmlChar *xstr, const xmlChar *ystr)
 {
     exsltDateValPtr x, y, dur;
-    xmlChar        *ret = NULL;   
+    xmlChar        *ret = NULL;
 
     if ((xstr == NULL) || (ystr == NULL))
         return NULL;
@@ -3015,16 +3040,16 @@ exsltDateDifference (const xmlChar *xstr, const xmlChar *ystr)
  * Implements the The date:duration function returns a duration string
  * representing the number of seconds specified by the argument string.
  * If no argument is given, then the result of calling date:seconds
- * without any arguments is used as a default argument. 
+ * without any arguments is used as a default argument.
  * The duration is returned as a string in the format defined for
- * xs:duration in [3.2.6 duration] of [XML Schema Part 2: Datatypes]. 
+ * xs:duration in [3.2.6 duration] of [XML Schema Part 2: Datatypes].
  * The number of years and months in the duration string must be equal
  * to zero. (The format of the string will be PnDTnHnMnS.) The number
  * of seconds specified in the duration string must be less than 60;
  * the number of minutes must be less than 60; the number of hours must
- * be less than 24. 
+ * be less than 24.
  * If the argument is Infinity, -Infinity or NaN, then date:duration
- * returns an empty string (''). 
+ * returns an empty string ('').
  *
  * Returns duration string or NULL.
  */
@@ -3766,4 +3791,124 @@ exsltDateRegister (void)
     xsltRegisterExtModuleFunction ((const xmlChar *) "year",
 				   (const xmlChar *) EXSLT_DATE_NAMESPACE,
 				   exsltDateYearFunction);
+}
+
+/**
+ * exsltDateXpathCtxtRegister:
+ *
+ * Registers the EXSLT - Dates and Times module for use outside XSLT
+ */
+int
+exsltDateXpathCtxtRegister (xmlXPathContextPtr ctxt, const xmlChar *prefix)
+{
+    if (ctxt
+        && prefix
+        && !xmlXPathRegisterNs(ctxt,
+                               prefix,
+                               (const xmlChar *) EXSLT_DATE_NAMESPACE)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "add",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateAddFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "add-duration",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateAddDurationFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "date",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateDateFunction)
+#ifdef WITH_TIME
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "date-time",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateDateTimeFunction)
+#endif
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "day-abbreviation",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateDayAbbreviationFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "day-in-month",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateDayInMonthFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "day-in-week",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateDayInWeekFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "day-in-year",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateDayInYearFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "day-name",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateDayNameFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "day-of-week-in-month",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateDayOfWeekInMonthFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "difference",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateDifferenceFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "duration",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateDurationFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "hour-in-day",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateHourInDayFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "leap-year",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateLeapYearFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "minute-in-hour",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateMinuteInHourFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "month-abbreviation",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateMonthAbbreviationFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "month-in-year",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateMonthInYearFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "month-name",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateMonthNameFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "second-in-minute",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateSecondInMinuteFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "seconds",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateSecondsFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "sum",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateSumFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "time",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateTimeFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "week-in-month",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateWeekInMonthFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "week-in-year",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateWeekInYearFunction)
+        && !xmlXPathRegisterFuncNS(ctxt,
+                                   (const xmlChar *) "year",
+                                   (const xmlChar *) EXSLT_DATE_NAMESPACE,
+                                   exsltDateYearFunction)) {
+        return 0;
+    }
+    return -1;
 }

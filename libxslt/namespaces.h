@@ -22,36 +22,41 @@ extern "C" {
  * Used within nsAliases hashtable when the default namespace is required
  * but it's not been explicitly defined
  */
+/**
+ * UNDEFINED_DEFAULT_NS:
+ *
+ * Special value for undefined namespace, internal
+ */
 #define	UNDEFINED_DEFAULT_NS	(const xmlChar *) -1L
 
 XSLTPUBFUN void XSLTCALL
 		xsltNamespaceAlias	(xsltStylesheetPtr style,
 					 xmlNodePtr node);
-XSLTPUBFUN xmlNsPtr XSLTCALL	
+XSLTPUBFUN xmlNsPtr XSLTCALL
 		xsltGetNamespace	(xsltTransformContextPtr ctxt,
 					 xmlNodePtr cur,
 					 xmlNsPtr ns,
 					 xmlNodePtr out);
-XSLTPUBFUN xmlNsPtr XSLTCALL	
+XSLTPUBFUN xmlNsPtr XSLTCALL
 		xsltGetPlainNamespace	(xsltTransformContextPtr ctxt,
 					 xmlNodePtr cur,
 					 xmlNsPtr ns,
 					 xmlNodePtr out);
-XSLTPUBFUN xmlNsPtr XSLTCALL	
+XSLTPUBFUN xmlNsPtr XSLTCALL
 		xsltGetSpecialNamespace	(xsltTransformContextPtr ctxt,
 					 xmlNodePtr cur,
 					 const xmlChar *URI,
 					 const xmlChar *prefix,
 					 xmlNodePtr out);
-XSLTPUBFUN xmlNsPtr XSLTCALL	
+XSLTPUBFUN xmlNsPtr XSLTCALL
 		xsltCopyNamespace	(xsltTransformContextPtr ctxt,
-					 xmlNodePtr node,
-					 xmlNsPtr cur);
-XSLTPUBFUN xmlNsPtr XSLTCALL	
+					 xmlNodePtr elem,
+					 xmlNsPtr ns);
+XSLTPUBFUN xmlNsPtr XSLTCALL
 		xsltCopyNamespaceList	(xsltTransformContextPtr ctxt,
 					 xmlNodePtr node,
 					 xmlNsPtr cur);
-XSLTPUBFUN void XSLTCALL		
+XSLTPUBFUN void XSLTCALL
 		xsltFreeNamespaceAliasHashes
 					(xsltStylesheetPtr style);
 

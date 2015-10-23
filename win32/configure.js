@@ -47,10 +47,12 @@ var withIconv = true;
 var withZlib = false;
 var withCrypto = true;
 var withModules = false;
+var withLocale = true;
 /* Win32 build options. */
 var dirSep = "\\";
 var compiler = "msvc";
 var cruntime = "/MD";
+var vcmanifest = false;
 var buildDebug = 0;
 var buildStatic = 0;
 var buildPrefix = ".";
@@ -105,9 +107,11 @@ function usage()
 	txt += "  zlib:       Use zlib library (" + (withZlib? "yes" : "no") + ")\n";
 	txt += "  crypto:     Enable Crypto support (" + (withCrypto? "yes" : "no") + ")\n";
 	txt += "  modules:    Enable Module support (" + (withModules? "yes" : "no") + ")\n";
+	txt += "  locale:     Enable Locale support, requires unicode OS support (" + (withLocale? "yes" : "no") + ")\n";
 	txt += "\nWin32 build options, default value given in parentheses:\n\n";
 	txt += "  compiler:   Compiler to be used [msvc|mingw] (" + compiler + ")\n";
 	txt += "  cruntime:   C-runtime compiler option (only msvc) (" + cruntime + ")\n";
+	txt += "  vcmanifest: Embed VC manifest (only msvc) (" + (vcmanifest? "yes" : "no") + ")\n";
 	txt += "  debug:      Build unoptimised debug executables (" + (buildDebug? "yes" : "no")  + ")\n";
 	txt += "  static:     Link xsltproc statically to libxslt (" + (buildStatic? "yes" : "no")  + ")\n";
 	txt += "              Note: automatically enabled if cruntime is not /MD or /MDd\n";
@@ -201,6 +205,7 @@ function discoverVersion()
 		vf.WriteLine("INCLUDE=$(INCLUDE);" + buildInclude);
 		vf.WriteLine("LIB=$(LIB);" + buildLib);
 		vf.WriteLine("CRUNTIME=" + cruntime);
+		vf.WriteLine("VCMANIFEST=" + (vcmanifest? "1" : "0"));
 	} else if (compiler == "mingw") {
 		vf.WriteLine("INCLUDE+=;" + buildInclude);
 		vf.WriteLine("LIB+=;" + buildLib);
@@ -237,6 +242,10 @@ function configureXslt()
 			of.WriteLine(s.replace(/\@WITH_DEBUGGER\@/, withDebugger? "1" : "0"));
 		} else if (s.search(/\@WITH_MODULES\@/) != -1) {
 			of.WriteLine(s.replace(/\@WITH_MODULES\@/, withModules? "1" : "0"));
+		} else if (s.search(/\@XSLT_LOCALE_XLOCALE\@/) != -1) {
+			of.WriteLine(s.replace(/\@XSLT_LOCALE_XLOCALE\@/, "0"));
+		} else if (s.search(/\@XSLT_LOCALE_WINAPI\@/) != -1) {
+			of.WriteLine(s.replace(/\@XSLT_LOCALE_WINAPI\@/, withLocale? "1" : "0"));
 		} else if (s.search(/\@LIBXSLT_DEFAULT_PLUGINS_PATH\@/) != -1) {
 			of.WriteLine(s.replace(/\@LIBXSLT_DEFAULT_PLUGINS_PATH\@/, "NULL"));
 		} else
@@ -340,10 +349,14 @@ for (i = 0; (i < WScript.Arguments.length) && (error == 0); i++) {
 			withCrypto = strToBool(arg.substring(opt.length + 1, arg.length));
 		else if (opt == "modules")
 			withModules = strToBool(arg.substring(opt.length + 1, arg.length));
+		else if (opt == "locale")
+			withLocale = strToBool(arg.substring(opt.length + 1, arg.length));
 		else if (opt == "compiler")
 			compiler = arg.substring(opt.length + 1, arg.length);
  		else if (opt == "cruntime")
  			cruntime = arg.substring(opt.length + 1, arg.length);
+		else if (opt == "vcmanifest")
+			vcmanifest = strToBool(arg.substring(opt.length + 1, arg.length));
 		else if (opt == "static")
 			buildStatic = strToBool(arg.substring(opt.length + 1, arg.length));
 		else if (opt == "prefix")
@@ -472,12 +485,14 @@ txtOut += "         Use iconv: " + boolToStr(withIconv) + "\n";
 txtOut += "         With zlib: " + boolToStr(withZlib) + "\n";
 txtOut += "            Crypto: " + boolToStr(withCrypto) + "\n";
 txtOut += "           Modules: " + boolToStr(withModules) + "\n";
+txtOut += "            Locale: " + boolToStr(withLocale) + "\n";
 txtOut += "\n";
 txtOut += "Win32 build configuration\n";
 txtOut += "-------------------------\n";
 txtOut += "          Compiler: " + compiler + "\n";
 if (compiler == "msvc")
 	txtOut += "  C-Runtime option: " + cruntime + "\n";
+	txtOut += "    Embed Manifest: " + boolToStr(vcmanifest) + "\n";
 txtOut += "     Debug symbols: " + boolToStr(buildDebug) + "\n";
 txtOut += "   Static xsltproc: " + boolToStr(buildStatic) + "\n";
 txtOut += "    Install prefix: " + buildPrefix + "\n";

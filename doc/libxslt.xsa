@@ -8,19 +8,17 @@
   </vendor>
   <product id="libxslt">
     <name>libxslt</name>
-    <version>1.1.15</version>
-    <last-release> Sep 04 2005</last-release>
+    <version>1.1.26</version>
+    <last-release> Sep 24 2009</last-release>
     <info-url>http://xmlsoft.org/XSLT/</info-url>
-    <changes>   - build fixes: Windows build cleanups and updates (Igor Zlatkovic),
-    remove jhbuild warnings
-   - bug fixes: negative number formatting (William Brack), number
-    formatting per mille definition (William Brack), XInclude default values
-    (William), text copy bugs (William), bug related to xmlXPathContext size,
-    reuse libxml2 memory management for text nodes, dictionnary text bug,
-    forbid variables in match (needs libxml2-2.6.21)
-   - improvements: EXSLT dyn:map (Mark Vakoc),
-   - documentation: EXSLT date and time functions namespace in man (Jonathan
-    Wakely)
+    <changes>   -  Improvement:
+    Add xsltProcessOneNode to exported symbols for lxml (Daniel Veillard)
+  
+   -  Bug fixes:
+    Fix an idness generation problem (Daniel Veillard),
+    595612 Try to fix some locking problems (Daniel Veillard),
+    Fix a crash on misformed imported stylesheets (Daniel Veillard)
+  
 
 </changes>
   </product>

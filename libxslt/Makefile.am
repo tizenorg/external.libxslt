@@ -1,4 +1,6 @@
-INCLUDES = -I$(top_srcdir) -I$(top_srcdir)/libxslt $(LIBXML_CFLAGS)
+AM_CPPFLAGS = -I$(top_srcdir) -I$(top_srcdir)/libxslt
+
+AM_CFLAGS = $(LIBXML_CFLAGS)
 
 lib_LTLIBRARIES = libxslt.la
 
@@ -24,11 +26,13 @@ xsltinc_HEADERS = 			\
 	security.h			\
 	xsltInternals.h			\
 	xsltconfig.h			\
-	xsltexports.h
+	xsltexports.h			\
+	xsltlocale.h
 
 libxslt_la_SOURCES = 			\
 	attrvt.c			\
 	xslt.c				\
+	xsltlocale.c			\
 	xsltutils.c			\
 	pattern.c			\
 	templates.c			\
@@ -50,15 +54,24 @@ libxslt_la_SOURCES = 			\
 	xsltwin32config.h.in		\
 	libxslt.h
 
-libxslt_la_LIBADD = $(EXTRA_LIBS)
-libxslt_la_LDFLAGS = -version-info @LIBXSLT_VERSION_INFO@
+if USE_VERSION_SCRIPT
+LIBXSLT_VERSION_SCRIPT = $(VERSION_SCRIPT_FLAGS)$(srcdir)/libxslt.syms
+else
+LIBXSLT_VERSION_SCRIPT =
+endif
+
+libxslt_la_LIBADD = $(LIBXML_LIBS) $(EXTRA_LIBS)
+libxslt_la_LDFLAGS =					\
+		$(WIN32_EXTRA_LDFLAGS)			\
+		$(LIBXSLT_VERSION_SCRIPT)		\
+		-version-info $(LIBXSLT_VERSION_INFO)
 
 man_MANS = libxslt.3
 
-EXTRA_DIST = $(man_MANS) trio.h triodef.h
+EXTRA_DIST = $(man_MANS) trio.h triodef.h libxslt.syms
 
 xsltproc: all
 	@(cd ../xsltproc ; $(MAKE))
 
 install-exec-hook:
-	$(mkinstalldirs) "$(DESTDIR)$(libdir)/libxslt-plugins"
+	$(MKDIR_P) "$(DESTDIR)$(libdir)/libxslt-plugins"

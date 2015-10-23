@@ -34,6 +34,13 @@
 #include <ctype.h>
 #endif
 
+#if defined(WIN32) && !defined(__CYGWIN__)
+#include <windows.h>
+#ifndef INVALID_FILE_ATTRIBUTES
+#define INVALID_FILE_ATTRIBUTES ((DWORD)-1)
+#endif
+#endif
+
 #ifndef HAVE_STAT
 #  ifdef HAVE__STAT
      /* MS C library seems to define stat and _stat. The definition
@@ -51,6 +58,7 @@
 #include "xslt.h"
 #include "xsltInternals.h"
 #include "xsltutils.h"
+#include "extensions.h"
 #include "security.h"
 
 
@@ -80,6 +88,8 @@ static xsltSecurityPrefsPtr xsltDefaultSecurityPrefs = NULL;
 xsltSecurityPrefsPtr
 xsltNewSecurityPrefs(void) {
     xsltSecurityPrefsPtr ret;
+
+    xsltInitGlobals();
 
     ret = (xsltSecurityPrefsPtr) xmlMalloc(sizeof(xsltSecurityPrefs));
     if (ret == NULL) {
@@ -117,6 +127,7 @@ xsltFreeSecurityPrefs(xsltSecurityPrefsPtr sec) {
 int
 xsltSetSecurityPrefs(xsltSecurityPrefsPtr sec, xsltSecurityOption option,
                      xsltSecurityCheck func) {
+    xsltInitGlobals();
     if (sec == NULL)
 	return(-1);
     switch (option) {
@@ -170,6 +181,7 @@ xsltGetSecurityPrefs(xsltSecurityPrefsPtr sec, xsltSecurityOption option) {
  */
 void
 xsltSetDefaultSecurityPrefs(xsltSecurityPrefsPtr sec) {
+
     xsltDefaultSecurityPrefs = sec;
 }
 
@@ -194,7 +206,7 @@ xsltGetDefaultSecurityPrefs(void) {
  *
  * Returns -1 in case of error, 0 otherwise
  */
-int                    
+int
 xsltSetCtxtSecurityPrefs(xsltSecurityPrefsPtr sec,
 	                 xsltTransformContextPtr ctxt) {
     if (ctxt == NULL)
@@ -253,7 +265,7 @@ xsltSecurityForbid(xsltSecurityPrefsPtr sec ATTRIBUTE_UNUSED,
  *
  * TODO: remove at some point !!!
  * Local copy of xmlCheckFilename to avoid a hard dependency on
- * a new version of libxml2 
+ * a new version of libxml2
  *
  * if stat is not available on the target machine,
  * returns 1.  if stat fails, returns 0 (if calling
@@ -267,6 +279,16 @@ xsltCheckFilename (const char *path)
 {
 #ifdef HAVE_STAT
     struct stat stat_buffer;
+#if defined(WIN32) && !defined(__CYGWIN__)
+    DWORD dwAttrs;
+
+    dwAttrs = GetFileAttributes(path);
+    if (dwAttrs != INVALID_FILE_ATTRIBUTES) {
+        if (dwAttrs & FILE_ATTRIBUTE_DIRECTORY) {
+            return 2;
+		}
+    }
+#endif
 
     if (stat(path, &stat_buffer) == -1)
         return 0;
@@ -278,6 +300,57 @@ xsltCheckFilename (const char *path)
 #endif
 #endif
     return 1;
+}
+
+static int
+xsltCheckWritePath(xsltSecurityPrefsPtr sec,
+		   xsltTransformContextPtr ctxt,
+		   const char *path)
+{
+    int ret;
+    xsltSecurityCheck check;
+    char *directory;
+
+    check = xsltGetSecurityPrefs(sec, XSLT_SECPREF_WRITE_FILE);
+    if (check != NULL) {
+	ret = check(sec, ctxt, path);
+	if (ret == 0) {
+	    xsltTransformError(ctxt, NULL, NULL,
+			       "File write for %s refused\n", path);
+	    return(0);
+	}
+    }
+
+    directory = xmlParserGetDirectory (path);
+
+    if (directory != NULL) {
+	ret = xsltCheckFilename(directory);
+	if (ret == 0) {
+	    /*
+	     * The directory doesn't exist check for creation
+	     */
+	    check = xsltGetSecurityPrefs(sec,
+					 XSLT_SECPREF_CREATE_DIRECTORY);
+	    if (check != NULL) {
+		ret = check(sec, ctxt, directory);
+		if (ret == 0) {
+		    xsltTransformError(ctxt, NULL, NULL,
+				       "Directory creation for %s refused\n",
+				       path);
+		    xmlFree(directory);
+		    return(0);
+		}
+	    }
+	    ret = xsltCheckWritePath(sec, ctxt, directory);
+	    if (ret == 1)
+		ret = mkdir(directory, 0755);
+	}
+	xmlFree(directory);
+	if (ret < 0)
+	    return(ret);
+    }
+
+    return(1);
 }
 
 /**
@@ -310,49 +383,21 @@ xsltCheckWrite(xsltSecurityPrefsPtr sec,
     }
     if ((uri->scheme == NULL) ||
 	(xmlStrEqual(BAD_CAST uri->scheme, BAD_CAST "file"))) {
-	char *directory;
+
+#if defined(WIN32) && !defined(__CYGWIN__)
+    if ((uri->path)&&(uri->path[0]=='/')&&
+        (uri->path[1]!='\0')&&(uri->path[2]==':'))
+    ret = xsltCheckWritePath(sec, ctxt, uri->path+1);
+    else
+#endif
 
 	/*
 	 * Check if we are allowed to write this file
 	 */
-	check = xsltGetSecurityPrefs(sec, XSLT_SECPREF_WRITE_FILE);
-	if (check != NULL) {
-	    ret = check(sec, ctxt, uri->path);
-	    if (ret == 0) {
-		xsltTransformError(ctxt, NULL, NULL,
-			     "File write for %s refused\n", URL);
-		xmlFreeURI(uri);
-		return(0);
-	    }
-	}
-
-	directory = xmlParserGetDirectory (uri->path);
-	if (directory != NULL) {
-	    ret = xsltCheckFilename(directory);
-	    if (ret == 0) {
-		/*
-		 * The directory doesn't exist check for creation
-		 */
-		check = xsltGetSecurityPrefs(sec,
-				 XSLT_SECPREF_CREATE_DIRECTORY);
-		if (check != NULL) {
-		    ret = check(sec, ctxt, directory);
-		    if (ret == 0) {
-			xsltTransformError(ctxt, NULL, NULL,
-					 "Directory creation for %s refused\n",
-					 URL);
-			xmlFree(directory);
-			xmlFreeURI(uri);
-			return(0);
-		    }
-		}
-		ret = xsltCheckWrite(sec, ctxt, (const xmlChar *)directory);
-		if (ret == 1)
-		    ret = mkdir(directory, 0755);
-		if (ret < 0)
-		    return(ret);
-	    }
-	    xmlFree(directory);
+	ret = xsltCheckWritePath(sec, ctxt, uri->path);
+	if (ret <= 0) {
+	    xmlFreeURI(uri);
+	    return(ret);
 	}
     } else {
 	/*
@@ -360,7 +405,7 @@ xsltCheckWrite(xsltSecurityPrefsPtr sec,
 	 */
 	check = xsltGetSecurityPrefs(sec, XSLT_SECPREF_WRITE_NETWORK);
 	if (check != NULL) {
-	    ret = check(sec, ctxt, uri->path);
+	    ret = check(sec, ctxt, (const char *)URL);
 	    if (ret == 0) {
 		xsltTransformError(ctxt, NULL, NULL,
 			     "File write for %s refused\n", URL);
@@ -420,7 +465,7 @@ xsltCheckRead(xsltSecurityPrefsPtr sec,
 	 */
 	check = xsltGetSecurityPrefs(sec, XSLT_SECPREF_READ_NETWORK);
 	if (check != NULL) {
-	    ret = check(sec, ctxt, uri->path);
+	    ret = check(sec, ctxt, (const char *)URL);
 	    if (ret == 0) {
 		xsltTransformError(ctxt, NULL, NULL,
 			     "Network file read for %s refused\n", URL);

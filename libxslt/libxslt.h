@@ -16,14 +16,14 @@
 #include "config.h"
 #endif
 
-#include "xsltconfig.h"
+#include <libxslt/xsltconfig.h>
 #include <libxml/xmlversion.h>
 
 #if !defined LIBXSLT_PUBLIC
 #if (defined (__CYGWIN__) || defined _MSC_VER) && !defined IN_LIBXSLT && !defined LIBXSLT_STATIC
 #define LIBXSLT_PUBLIC __declspec(dllimport)
 #else
-#define LIBXSLT_PUBLIC 
+#define LIBXSLT_PUBLIC
 #endif
 #endif
 

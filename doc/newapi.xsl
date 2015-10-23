@@ -48,13 +48,13 @@
   <xsl:variable name="globaltitle">
     <xsl:choose>
       <xsl:when test="$libname='libxslt'">
-        <xsl:value-of select="'The XSLT C library for Gnome'"/>
+        <xsl:value-of select="'The XSLT C library for GNOME'"/>
      </xsl:when>
      <xsl:when test="$libname='libxml'">
-	  <xsl:value-of select="'The XML C library for Gnome'"/>
+	  <xsl:value-of select="'The XML C library for GNOME'"/>
 	</xsl:when>
 	<xsl:when test="$libname='libexslt'">
-	  <xsl:value-of select="'The EXSLT C library for Gnome'"/>
+	  <xsl:value-of select="'The EXSLT C library for GNOME'"/>
 	</xsl:when>
      <xsl:otherwise>
        <xsl:value-of select="'Unknown Library'"/>
@@ -592,25 +592,6 @@
     </xsl:if>
   </xsl:template>
 
-  <xsl:template name="docomponents">
-    <xsl:param name="mode"/>
-    <xsl:apply-templates select="exports[@type='macro']" mode="$mode">
-      <xsl:sort select='@symbol'/>
-    </xsl:apply-templates>
-    <xsl:apply-templates select="exports[@type='enum']" mode="$mode">
-      <xsl:sort select='@symbol'/>
-    </xsl:apply-templates>
-    <xsl:apply-templates select="exports[@type='typedef']" mode="$mode">
-      <xsl:sort select='@symbol'/>
-    </xsl:apply-templates>
-    <xsl:apply-templates select="exports[@type='struct']" mode="$mode">
-      <xsl:sort select='@symbol'/>
-    </xsl:apply-templates>
-    <xsl:apply-templates select="exports[@type='function']" mode="$mode">
-      <xsl:sort select='@symbol'/>
-    </xsl:apply-templates>
-  </xsl:template>
-  
   <xsl:template match="file">
     <xsl:variable name="name" select="@name"/>
     <xsl:variable name="title">Module <xsl:value-of select="$name"/> from <xsl:value-of select="/api/@name"/></xsl:variable>

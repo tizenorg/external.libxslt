@@ -4,12 +4,258 @@
   Note that this is automatically generated from the news webpage at:
        http://xmlsoft.org/XSLT/news.html
 
-The change log at 
-ChangeLog.html
- describes the recents commits
-to the CVS at 
-http://cvs.gnome.org/viewcvs/libxslt/
- code base.Those are the public releases made:
+See the git page at 
+http://git.gnome.org/browse/libxslt/
+
+to get a description of the recent commits.Those are the public releases made:
+1.1.27: Sep 12 2012:
+   -  Portability:
+    xincludestyle wasn't protected with LIBXML_XINCLUDE_ENABLED (Michael Bonfils),
+    Portability fix for testThreads.c (IlyaS),
+    FreeBSD portability fixes (Pedro F. Giffuni),
+    check for gmtime - on mingw* hosts will enable date-time function (Roumen Petrov),
+    use only native crypto-API for mingw* hosts (Roumen Petrov),
+    autogen: Only check for libtoolize (Colin Walters),
+    minimal mingw support (Roumen Petrov),
+    configure: acconfig.h is deprecated since autoconf-2.50 (Stefan Kost),
+    Fix a small out of tree compilation issue (Hao Hu),
+    Fix python generator to not use deprecated xmllib (Daniel Veillard),
+    link python module with python library (Frederic Crozat)
+  
+   -  Documentation:
+    Tiny doc improvement (Daniel Veillard),
+    Various documentation fixes for docs on internals (C. M. Sperberg-McQueen)
+  
+   -  Bug fixes:
+    Report errors on variable use in key (Daniel Veillard),
+    The XSLT namespace string is a constant one (Daniel Veillard),
+    Fix handling of names in xsl:attribute (Nick Wellnhofer),
+    Reserved namespaces in xsl:element and xsl:attribute (Nick Wellnhofer),
+    Null-terminate result string of cry:rc4_decrypt (Nick Wellnhofer),
+    EXSLT date normalization fix (James Muscat),
+    Exit after compilation of invalid func:result (Nick Wellnhofer),
+    Fix for EXSLT func:function (Nick Wellnhofer),
+    Rewrite EXSLT string:replace to be conformant (Nick Wellnhofer),
+    Avoid a heap use after free error (Chris Evans),
+    Fix a dictionary string usage (Chris Evans),
+    Output should not include extraneous newlines when indent is off (Laurence Rowe),
+    document('') fails to return stylesheets parsed from memory (Jason Viers),
+    xsltproc should return an error code if xinclude fails (Malcolm Purvis),
+    Forwards-compatible processing of unknown top level elements (Nick Wellnhofer),
+    Fix system-property with unknown namespace (Nick Wellnhofer),
+    Hardening of code checking node types in EXSLT (Daniel Veillard),
+    Hardening of code checking node types in various entry point (Daniel Veillard),
+    Cleanup of the pattern compilation code (Daniel Veillard),
+    Fix default template processing on namespace nodes (Daniel Veillard),
+    Fix a bug in selecting XSLT elements (Daniel Veillard),
+    Fixed bug #616839 (Daniel Mustieles),
+    Fix some case of pattern parsing errors (Abhishek Arya),
+    preproc: fix the build (Stefan Kost),
+    Fix a memory leak with xsl:number (Daniel Veillard),
+    Fix a problem with ESXLT date:add() with January (money_seshu Dronamraju),
+    Fix a memory leak if compiled with Windows locale support (Daniel Veillard),
+    Fix generate-id() to not expose object addresses (Daniel Veillard),
+    Fix curlies support in literals for non-compiled AVTs (Nick Wellnhofer),
+    Allow whitespace in xsl:variable with select (Nick Wellnhofer),
+    Small fixes to locale code (Nick Wellnhofer),
+    Fix bug 602515 (Nick Wellnhofer),
+    Fix popping of vars in xsltCompilerNodePop (Nick Wellnhofer),
+    Fix direct pattern matching bug (Nick Wellnhofer)
+  
+   -  Improvements:
+    Add the saxon:systemId extension (Mike Hommey),
+    Add an append mode to document output (Daniel Veillard),
+    Add new tests to EXTRA_DIST (Nick Wellnhofer),
+    Test for bug #680920 (Nick Wellnhofer),
+    fix regresson in Various "make distcheck" and other fixes (Roumen Petrov),
+    Various "make distcheck" and other fixes (Daniel Richard G),
+    Fix portability to upcoming libxml2-2.9.0 (Daniel Veillard),
+    Adding --system flag support to autogen.sh (Daniel Veillard),
+    Allow per-context override of xsltMaxDepth, introduce xsltMaxVars (Jérôme Carretero),
+    autogen.sh: Honor NOCONFIGURE environment variable (Colin Walters),
+    configure: support silent automake rules if possible (Stefan Kost),
+    Precompile patterns in xsl:number (Nick Wellnhofer),
+    Fix some warnings in the refactored code (Nick Wellnhofer),
+    Adding new generated files (Daniel Veillard),
+    profiling: add callgraph report (Stefan Kost)
+  
+   -  Cleanups:
+    Big space and tabs cleanup (Daniel Veillard),
+    Fix authors list (Daniel Veillard),
+    Cleanups some of the test makefiles (Daniel Richard),
+    Remove .cvsignore files which are not needed anymore (Daniel Veillard),
+    Cleanup some misplaced spaces and tabs (Daniel Veillard),
+    Augment list of ignored files (Daniel Veillard),
+    configure: remove checks for isinf and isnan as those are not used anyway (Stefan Kost),
+    Point to GIT for source code and a bit of cleanup (Daniel Veillard),
+    Get rid of specific build setup and STATIC_BINARIES (Daniel Veillard)
+  
+
+
+1.1.26: Sep 24 2009:
+   -  Improvement:
+    Add xsltProcessOneNode to exported symbols for lxml (Daniel Veillard)
+  
+   -  Bug fixes:
+    Fix an idness generation problem (Daniel Veillard),
+    595612 Try to fix some locking problems (Daniel Veillard),
+    Fix a crash on misformed imported stylesheets (Daniel Veillard)
+  
+
+
+1.1.25: Sep 17 2009:
+   -  Features:
+      Add API versioning and various cleanups (Daniel Veillard),
+      xsl:sort lang support using the locale (Nick Wellnhofer and Roumen Petrov)
+  
+   -  Documentation:
+      Fix the download links for Solaris (Daniel Veillard),
+      Fix makefile and spec file to include doc in rpm (Daniel Veillard)
+  
+   -  Portability:
+      Make sure testThreads is linked with pthreads (Daniel Veillard),
+      Fix potential crash on debug of extensions Solaris (Ben Walton),
+      applied patch from Roumen Petrov for mingw cross compilation problems (Roumen Petrov),
+      patch from Richard Jones to build shared libs with MinGW cross-compiler (Richard Jones),
+      fix include path when compiling with MinGW (Roumen Petrov),
+      portability fixes ( Nick Wellnhofer and Roumen Petrov)
+  
+   -  Bug fixes:
+      Big fixes of pattern compilations (Nick Wellnhofer),
+      Fix uses of xmlAddChild for error handling (Daniel Veillard),
+      Detect deep recusion on function calls (Daniel Veillard),
+      Avoid an error in namespace generation (Martin),
+      Fix importing of encoding from included stylesheets (Nick Wellnhofer),
+      Fix problems with embedded stylesheets and namespaces (Martin),
+      QName parsing fix for patterns (Martin),
+      Crash compiling stylesheet with DTD (Martin),
+      Fix xsl:strip-space with namespace and wildcard (Nick Wellnhofer),
+      Fix a mutex deadlock on unregistered extensions (Nix),
+      567192 xsltproc --output option ignore --xinclude (Joachim Breitner),
+      Fix redundant headers in list (Daniel Veillard),
+      134754 Configure's --with-html-dir related fixes (Julio M. Merino Vidal),
+      305913 a serious problem in extensions reentrancy (Daniel Veillard),
+      Fix an idness issue when building the tree (Daniel Veillard),
+      Fixed indexing error reported by Ron Burk on the mailing list. (William M. Brack),
+      prevent some unchecked pointer accesses (Jake Goulding),
+      fix for CVE-2008-2935 libexslt RC4 encryption/decryption functions Daniel (Daniel Veillard),
+      avoid a quadratic behaviour when hitting duplicates (Daniel Veillard),
+      544829 fixed option --with-debugger (Arun Ragnavan),
+      541965 fixed incorrect argument popping in exsltMathAtan2Function (William M. Brack),
+      fix problem with string check for element-available (Ron Burk),
+      539741 added code to handle literal within an AVT (William M. Brack)
+  
+   -  Improvements:
+      Allow use of EXSLT outside XSLT (Martin),
+      Support Esperanto locale (Nick Wellnhofer),
+      Change how attributes are copied for id and speed (Daniel Veillard),
+      Add API versioning and various cleanups (Daniel Veillard),
+      Adding a test program to check thread reentrancy (Daniel Veillard),
+      big patch from  finishing xsl:sort lang support (Roumen Petrov),
+      add xsl:sort lang support using the locale (Nick Wellnhofer)
+  
+   -  Cleanups:
+      Label xsltProcessOneNode as static (Daniel Veillard),
+      git setup (Daniel Veillard),
+      fixed typo detected by new libxml2 code (William M. Brack),
+      xsltExtFunctionLookup was defined but never implemented (Ralf Junker)
+  
+
+
+1.1.24: May 13 2008:
+   - Documentation: man page fix (Vincent Lefevre).
+   - Bug fixes: pattern bug fix, key initialization problems, exclusion of
+      unknown namespaced element on top of stylesheets, python generator
+      syntactic cleanup (Martin)
+
+
+1.1.23: Apr  8 2008:
+   - Documentation: fix links for Cygwin DocBook setup (Philippe Bourcier),
+      xsltParseStylesheetDoc doc fix (Jason Viers), fix manpage default
+      maxdepth value 
+   - Bug fixes: python segfault (Daniel Gryniewicz), week-in-year bug fix
+      (Maurice van der Pot), fix python iterator problem (William Brack),
+      avoid garbage collection problems on str:tokenize and str:split
+      and function results (William Brack and Peter Pawlowski) 
+      superfluous re-generation of keys (William Brack), remove superfluous
+      code in xsltExtInitTest (Tony Graham), func:result segfault fix
+      (William Brack), timezone offset problem (Peter Pawlowski),
+   - Portability fixes: old gcrypt support fix (Brent Cowgill), Python
+      portability patch (Stephane Bidoul), VS 2008 fix (Rob Richard) 
+
+
+1.1.22: Aug 23 2007:
+   - Bug fixes: RVT cleanup problems (William Brack), exclude-result-prefix
+      bug (William Brack), stylesheet compilation error handling (Rob Richards).
+      
+   - Portability fixes: improve build with VS2005 (Rob Richards), 
+      fixing build on AIX (Bjorn Wiberg), fix the security file checks on
+      Windows (Roland Schwarz and Rob Richards). 
+   - Improvement: add an --encoding option to xsltproc (Drazen Kacar). 
+
+
+1.1.21: Jun 12 2007:
+   - Bug fixes: out of memory allocation errors (William Brack), 
+      namespace problem on compound predicates (William Brack),
+      python space/tab inconsistencies (Andreas Hanke), hook xsl:message
+      to per transformation error callbacks (Shaun McCance),
+      cached RVT problem (William Brack), XPath context maintainance
+      on choose (William Brack), memory leaks in the math module (William
+      Brack), exclude-result-prefix induced namespace problem (William
+      Brack)
+   - Build: configure setup for TRIO_REPLACE_STDIO (William Brack)
+  
+   - Documentation: updated after change from CVs to SVN (William Brack)
+
+
+1.1.20: Jan 17 2007:
+   - Portability fixes: strict aliasing fix (Marcus Meissner), BSD portability
+      patches (Roland Illig)
+   - Bug fixes: Result Value Tree handling fix (William Brack), function
+      parameters fix (William), uninitialized variable (Kjartan Maraas),
+      empty text node handling (William), plugin support and test fixes (William),
+      fragment support fixes (William)
+   - Improvements: python stylesheet compare and transform context
+      access (Nic Ferrier), EXSLT string replace support (Joel Reed),
+      xsltproc better low level error handling (Mike Hommey and William)
+
+
+1.1.19: Nov 29 2006:
+   - Bug fixes: entities within attributes (William Brack), Python detection
+      problem (Joseph Sacco), in-scope namespace bug (Mike Hommey), Result
+      value tree caching bug (William Brack)
+
+
+1.1.18: Oct 26 2006:
+   - portability and build fixes: DESTDIR problem, build paths in python
+      shared lib, compile when libxml2 doesn't support XInclude (Gary Coady).
+   - bug fixes: a number of namespace related bugs (Kasimier Buchcik), 
+      parameters bugs (Kasimier Buchcik), proximity position in predicates
+      of match patterns (Kasimier), exslt-node-set troubles with strings
+      (Kasimier), CDATA serialization, Python floats and booleans XPath
+      conversions, XInclude support fixes, RVT cleanup problem (William Brack
+      and Kasimier), attribute checking in stylesheets (Kasimier), xsltForEach
+      context problem (Kasimier), security check should pass full URLs (Shane
+      Corgatelli), security cleanup patch (Mikhail Zabaluev), some python
+      accessor for stylesheet were broken, memory errors when compiling 
+      stylesheets (Mike Hommey), EXSLT current date end-of-month problem
+      (William Brack).
+   - improvements: refactoring of namespace handling, value-of impleemntation
+      and template internal processing (Kasimier Buchcik), new xsltproc
+      flag to apply Xinclude to stylesheets.
+   - documentation: xsltproc man pages (Daniel Leidert), tests updates
+      (William Brack), various typo fixes (Daniel Leidert), comments on
+      versions macros (Peter Breitenlohner).
+
+
+1.1.17: Jun 6 2006:
+   - portability fixes: python detection
+   - bug fixes: some regression tests, attribute/namespaces output (Kasimier
+    Buchcik), problem in mixed xsl:value-of and xsl:text uses (Kasimier)
+   - improvements: internal refactoring (Kasimier Buchcik), use of the XPath
+    object cache in libxml2-2.6.25 (Kasimier)
+
+
 1.1.16: May 01 2006:
    - portability fixes: EXSLT date/time on Solaris and IRIX (Albert Chin),
       HP-UX  build (Albert Chin), 
@@ -34,7 +280,7 @@ http://cvs.gnome.org/viewcvs/libxslt/
    - bug fixes: negative number formatting (William Brack), number
     formatting per mille definition (William Brack), XInclude default values
     (William), text copy bugs (William), bug related to xmlXPathContext size,
-    reuse libxml2 memory management for text nodes, dictionnary text bug,
+    reuse libxml2 memory management for text nodes, dictionary text bug,
     forbid variables in match (needs libxml2-2.6.21)
    - improvements: EXSLT dyn:map (Mark Vakoc),
    - documentation: EXSLT date and time functions namespace in man (Jonathan
@@ -49,7 +295,7 @@ http://cvs.gnome.org/viewcvs/libxslt/
     select, xinclude and document() problem, build outside of source tree
     (Mike Castle)
    - improvement: added a --nodict mode to xsltproc to check problems for
-    docuemtns without dictionnaries
+    docuemtns without dictionaries
 
 
 1.1.13: Mar 13 2005:
@@ -63,7 +309,7 @@ http://cvs.gnome.org/viewcvs/libxslt/
     (Aleksey Gurtovoy), pattern expression fixes (William Brack), out of
     memory detection misses (William), parserOptions propagation (William),
     exclude-result-prefixes fix (William), // patten fix (William).
-   - extensions: module support (Joel Reed), dictionnary based speedups
+   - extensions: module support (Joel Reed), dictionary based speedups
     trying to get rid of xmlStrEqual as much as possible.
    - documentation: added Wiki (Joel Reed)
 
@@ -136,14 +382,14 @@ http://cvs.gnome.org/viewcvs/libxslt/
 
 
 1.1.5: Mar 23 2004:
-   - performance: use dictionnary lookup for variables
+   - performance: use dictionary lookup for variables
    - remove use of _private from source documents
    - cleanup of "make tests" output
    - bugfixes: AVT in local variables, use localtime_r to avoid thread
     troubles (William), dictionary handling bug (William), limited number of
     stubstitutions in AVT (William), tokenize fix for UTF-8 (William),
     superfluous namespace (William), xsltproc error code on
-    <xsl:message> halt, OpenVMS fix, dictionnary reference counting
+    <xsl:message> halt, OpenVMS fix, dictionary reference counting
     change.
 
 
@@ -156,7 +402,7 @@ http://cvs.gnome.org/viewcvs/libxslt/
 
 1.1.3: Feb 16 2004:
    - Rewrote the Attribute Value Template code, new XPath compilation
-    interfaces, dictionnary reuses for XSLT with potential for serious
+    interfaces, dictionary reuses for XSLT with potential for serious
     performance improvements.
    - bug fixes: portability (William Brack), key() in node-set() results
     (William), comment before doctype (William), math and node-set() problems
@@ -470,7 +716,7 @@ This is a bugfix only release   - error message missing argument (William Brack)
    - patches for Windows and update of Windows Makefiles by Igor
    - OpenVMS port instructions from John A Fotheringham
    - fixed some Makefiles annoyance and libraries prelinking
-  informations
+  information
 
 
 1.0.7: Nov 10 2001:

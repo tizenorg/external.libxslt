@@ -36,15 +36,15 @@
 #endif
 
 /************************************************************************
- * 									*
- * 		Hooks for the document loader				*
- * 									*
+ *									*
+ *		Hooks for the document loader				*
+ *									*
  ************************************************************************/
 
 /**
  * xsltDocDefaultLoaderFunc:
  * @URI: the URI of the document to load
- * @dict: the dictionnary to use when parsing that document
+ * @dict: the dictionary to use when parsing that document
  * @options: parsing options, a set of xmlParserOption
  * @ctxt: the context, either a stylesheet or a transformation context
  * @type: the xsltLoadType indicating the kind of loading required
@@ -116,7 +116,7 @@ xsltDocLoaderFunc xsltDocDefaultLoader = xsltDocDefaultLoaderFunc;
  * Set the new function to load document, if NULL it resets it to the
  * default function.
  */
- 
+
 void
 xsltSetLoaderFunc(xsltDocLoaderFunc f) {
     if (f == NULL)
@@ -140,7 +140,7 @@ xsltSetLoaderFunc(xsltDocLoaderFunc f) {
  *
  * Returns a handler to the document
  */
-xsltDocumentPtr	
+xsltDocumentPtr
 xsltNewDocument(xsltTransformContextPtr ctxt, xmlDocPtr doc) {
     xsltDocumentPtr cur;
 
@@ -153,11 +153,19 @@ xsltNewDocument(xsltTransformContextPtr ctxt, xmlDocPtr doc) {
     memset(cur, 0, sizeof(xsltDocument));
     cur->doc = doc;
     if (ctxt != NULL) {
-        if (!xmlStrEqual((xmlChar *)doc->name, BAD_CAST " fake node libxslt")) {
+        if (! XSLT_IS_RES_TREE_FRAG(doc)) {
 	    cur->next = ctxt->docList;
 	    ctxt->docList = cur;
 	}
-	xsltInitCtxtKeys(ctxt, cur);
+	/*
+	* A key with a specific name for a specific document
+	* will only be computed if there's a call to the key()
+	* function using that specific name for that specific
+	* document. I.e. computation of keys will be done in
+	* xsltGetKey() (keys.c) on an on-demand basis.
+	*
+	* xsltInitCtxtKeys(ctxt, cur); not called here anymore
+	*/
     }
     return(cur);
 }
@@ -171,7 +179,7 @@ xsltNewDocument(xsltTransformContextPtr ctxt, xmlDocPtr doc) {
  *
  * Returns a handler to the document
  */
-xsltDocumentPtr	
+xsltDocumentPtr
 xsltNewStyleDocument(xsltStylesheetPtr style, xmlDocPtr doc) {
     xsltDocumentPtr cur;
 
@@ -192,18 +200,40 @@ xsltNewStyleDocument(xsltStylesheetPtr style, xmlDocPtr doc) {
 
 /**
  * xsltFreeStyleDocuments:
- * @style: an XSLT style sheet
+ * @style: an XSLT stylesheet (representing a stylesheet-level)
  *
- * Free up all the space used by the loaded documents
+ * Frees the node-trees (and xsltDocument structures) of all
+ * stylesheet-modules of the stylesheet-level represented by
+ * the given @style.
  */
-void	
+void
 xsltFreeStyleDocuments(xsltStylesheetPtr style) {
     xsltDocumentPtr doc, cur;
+#ifdef XSLT_REFACTORED_XSLT_NSCOMP
+    xsltNsMapPtr nsMap;
+#endif
+
+    if (style == NULL)
+	return;
+
+#ifdef XSLT_REFACTORED_XSLT_NSCOMP
+    if (XSLT_HAS_INTERNAL_NSMAP(style))
+	nsMap = XSLT_GET_INTERNAL_NSMAP(style);
+    else
+	nsMap = NULL;
+#endif
 
     cur = style->docList;
     while (cur != NULL) {
 	doc = cur;
 	cur = cur->next;
+#ifdef XSLT_REFACTORED_XSLT_NSCOMP
+	/*
+	* Restore all changed namespace URIs of ns-decls.
+	*/
+	if (nsMap)
+	    xsltRestoreDocumentNamespaces(nsMap, doc->doc);
+#endif
 	xsltFreeDocumentKeys(doc);
 	if (!doc->main)
 	    xmlFreeDoc(doc->doc);
@@ -217,7 +247,7 @@ xsltFreeStyleDocuments(xsltStylesheetPtr style) {
  *
  * Free up all the space used by the loaded documents
  */
-void	
+void
 xsltFreeDocuments(xsltTransformContextPtr ctxt) {
     xsltDocumentPtr doc, cur;
 
@@ -251,7 +281,7 @@ xsltFreeDocuments(xsltTransformContextPtr ctxt) {
  *
  * Returns the new xsltDocumentPtr or NULL in case of error
  */
-xsltDocumentPtr	
+xsltDocumentPtr
 xsltLoadDocument(xsltTransformContextPtr ctxt, const xmlChar *URI) {
     xsltDocumentPtr ret;
     xmlDocPtr doc;
@@ -264,7 +294,7 @@ xsltLoadDocument(xsltTransformContextPtr ctxt, const xmlChar *URI) {
      */
     if (ctxt->sec != NULL) {
 	int res;
-	
+
 	res = xsltCheckRead(ctxt->sec, ctxt, URI);
 	if (res == 0) {
 	    xsltTransformError(ctxt, NULL, NULL,
@@ -325,7 +355,7 @@ xsltLoadDocument(xsltTransformContextPtr ctxt, const xmlChar *URI) {
  *
  * Returns the new xsltDocumentPtr or NULL in case of error
  */
-xsltDocumentPtr	
+xsltDocumentPtr
 xsltLoadStyleDocument(xsltStylesheetPtr style, const xmlChar *URI) {
     xsltDocumentPtr ret;
     xmlDocPtr doc;
@@ -375,7 +405,9 @@ xsltLoadStyleDocument(xsltStylesheetPtr style, const xmlChar *URI) {
  * @ctxt: an XSLT transformation context
  * @doc: a parsed XML document
  *
- * Try to find a document within the XSLT transformation context
+ * Try to find a document within the XSLT transformation context.
+ * This will not find document infos for temporary
+ * Result Tree Fragments.
  *
  * Returns the desired xsltDocumentPtr or NULL in case of error
  */

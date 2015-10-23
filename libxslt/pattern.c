@@ -25,6 +25,7 @@
 #include <libxml/hash.h>
 #include <libxml/xmlerror.h>
 #include <libxml/parserInternals.h>
+#include <libxml/xpath.h>
 #include "xslt.h"
 #include "xsltInternals.h"
 #include "xsltutils.h"
@@ -32,6 +33,7 @@
 #include "templates.h"
 #include "keys.h"
 #include "pattern.h"
+#include "documents.h"
 
 #ifdef WITH_XSLT_DEBUG
 #define WITH_XSLT_DEBUG_PATTERN
@@ -45,7 +47,6 @@ typedef enum {
     XSLT_OP_END=0,
     XSLT_OP_ROOT,
     XSLT_OP_ELEM,
-    XSLT_OP_CHILD,
     XSLT_OP_ATTR,
     XSLT_OP_PARENT,
     XSLT_OP_ANCESTOR,
@@ -59,6 +60,11 @@ typedef enum {
     XSLT_OP_NODE,
     XSLT_OP_PREDICATE
 } xsltOp;
+
+typedef enum {
+    AXIS_CHILD=1,
+    AXIS_ATTRIBUTE
+} xsltAxis;
 
 typedef struct _xsltStepState xsltStepState;
 typedef xsltStepState *xsltStepStatePtr;
@@ -105,7 +111,7 @@ struct _xsltCompMatch {
     int maxStep;
     xmlNsPtr *nsList;		/* the namespaces in scope */
     int nsNr;			/* the number of namespaces in scope */
-    xsltStepOp steps[40];        /* ops for computation */
+    xsltStepOpPtr steps;        /* ops for computation */
 };
 
 typedef struct _xsltParserContext xsltParserContext;
@@ -122,9 +128,9 @@ struct _xsltParserContext {
 };
 
 /************************************************************************
- * 									*
- * 			Type functions 					*
- * 									*
+ *									*
+ *			Type functions					*
+ *									*
  ************************************************************************/
 
 /**
@@ -141,11 +147,20 @@ xsltNewCompMatch(void) {
     cur = (xsltCompMatchPtr) xmlMalloc(sizeof(xsltCompMatch));
     if (cur == NULL) {
 	xsltTransformError(NULL, NULL, NULL,
-		"xsltNewCompMatch : malloc failed\n");
+		"xsltNewCompMatch : out of memory error\n");
 	return(NULL);
     }
     memset(cur, 0, sizeof(xsltCompMatch));
-    cur->maxStep = 40;
+    cur->maxStep = 10;
+    cur->nbStep = 0;
+    cur-> steps = (xsltStepOpPtr) xmlMalloc(sizeof(xsltStepOp) *
+                                            cur->maxStep);
+    if (cur->steps == NULL) {
+	xsltTransformError(NULL, NULL, NULL,
+		"xsltNewCompMatch : out of memory error\n");
+	xmlFree(cur);
+	return(NULL);
+    }
     cur->nsNr = 0;
     cur->nsList = NULL;
     cur->direct = 0;
@@ -180,6 +195,7 @@ xsltFreeCompMatch(xsltCompMatchPtr comp) {
 	if (op->comp != NULL)
 	    xmlXPathFreeCompExpr(op->comp);
     }
+    xmlFree(comp->steps);
     memset(comp, -1, sizeof(xsltCompMatch));
     xmlFree(comp);
 }
@@ -278,14 +294,30 @@ static int
 xsltCompMatchAdd(xsltParserContextPtr ctxt, xsltCompMatchPtr comp,
                  xsltOp op, xmlChar * value, xmlChar * value2, int novar)
 {
-    if (comp->nbStep >= 40) {
-        xsltTransformError(NULL, NULL, NULL,
-                         "xsltCompMatchAdd: overflow\n");
-        return (-1);
+    if (comp->nbStep >= comp->maxStep) {
+        xsltStepOpPtr tmp;
+
+	tmp = (xsltStepOpPtr) xmlRealloc(comp->steps, comp->maxStep * 2 *
+	                                 sizeof(xsltStepOp));
+	if (tmp == NULL) {
+	    xsltGenericError(xsltGenericErrorContext,
+	     "xsltCompMatchAdd: memory re-allocation failure.\n");
+	    if (ctxt->style != NULL)
+		ctxt->style->errors++;
+	    if (value)
+	        xmlFree(value);
+	    if (value2)
+	        xmlFree(value2);
+	    return (-1);
+	}
+        comp->maxStep *= 2;
+	comp->steps = tmp;
     }
     comp->steps[comp->nbStep].op = op;
     comp->steps[comp->nbStep].value = value;
     comp->steps[comp->nbStep].value2 = value2;
+    comp->steps[comp->nbStep].value3 = NULL;
+    comp->steps[comp->nbStep].comp = NULL;
     if (ctxt->ctxt != NULL) {
 	comp->steps[comp->nbStep].previousExtra =
 	    xsltAllocateExtraCtxt(ctxt->ctxt);
@@ -341,7 +373,8 @@ xsltSwapTopCompMatch(xsltCompMatchPtr comp) {
     if (j > 0) {
 	register xmlChar *tmp;
 	register xsltOp op;
-	register xmlXPathCompExprPtr expr; 
+	register xmlXPathCompExprPtr expr;
+	register int t;
 	i = j - 1;
 	tmp = comp->steps[i].value;
 	comp->steps[i].value = comp->steps[j].value;
@@ -349,46 +382,74 @@ xsltSwapTopCompMatch(xsltCompMatchPtr comp) {
 	tmp = comp->steps[i].value2;
 	comp->steps[i].value2 = comp->steps[j].value2;
 	comp->steps[j].value2 = tmp;
+	tmp = comp->steps[i].value3;
+	comp->steps[i].value3 = comp->steps[j].value3;
+	comp->steps[j].value3 = tmp;
 	op = comp->steps[i].op;
 	comp->steps[i].op = comp->steps[j].op;
 	comp->steps[j].op = op;
 	expr = comp->steps[i].comp;
 	comp->steps[i].comp = comp->steps[j].comp;
 	comp->steps[j].comp = expr;
+	t = comp->steps[i].previousExtra;
+	comp->steps[i].previousExtra = comp->steps[j].previousExtra;
+	comp->steps[j].previousExtra = t;
+	t = comp->steps[i].indexExtra;
+	comp->steps[i].indexExtra = comp->steps[j].indexExtra;
+	comp->steps[j].indexExtra = t;
+	t = comp->steps[i].lenExtra;
+	comp->steps[i].lenExtra = comp->steps[j].lenExtra;
+	comp->steps[j].lenExtra = t;
     }
 }
 
 /**
  * xsltReverseCompMatch:
+ * @ctxt: the parser context
  * @comp:  the compiled match expression
  *
  * reverse all the stack of expressions
  */
 static void
-xsltReverseCompMatch(xsltCompMatchPtr comp) {
+xsltReverseCompMatch(xsltParserContextPtr ctxt, xsltCompMatchPtr comp) {
     int i = 0;
     int j = comp->nbStep - 1;
 
     while (j > i) {
 	register xmlChar *tmp;
 	register xsltOp op;
-	register xmlXPathCompExprPtr expr; 
+	register xmlXPathCompExprPtr expr;
+	register int t;
+
 	tmp = comp->steps[i].value;
 	comp->steps[i].value = comp->steps[j].value;
 	comp->steps[j].value = tmp;
 	tmp = comp->steps[i].value2;
 	comp->steps[i].value2 = comp->steps[j].value2;
 	comp->steps[j].value2 = tmp;
+	tmp = comp->steps[i].value3;
+	comp->steps[i].value3 = comp->steps[j].value3;
+	comp->steps[j].value3 = tmp;
 	op = comp->steps[i].op;
 	comp->steps[i].op = comp->steps[j].op;
 	comp->steps[j].op = op;
 	expr = comp->steps[i].comp;
 	comp->steps[i].comp = comp->steps[j].comp;
 	comp->steps[j].comp = expr;
+	t = comp->steps[i].previousExtra;
+	comp->steps[i].previousExtra = comp->steps[j].previousExtra;
+	comp->steps[j].previousExtra = t;
+	t = comp->steps[i].indexExtra;
+	comp->steps[i].indexExtra = comp->steps[j].indexExtra;
+	comp->steps[j].indexExtra = t;
+	t = comp->steps[i].lenExtra;
+	comp->steps[i].lenExtra = comp->steps[j].lenExtra;
+	comp->steps[j].lenExtra = t;
 	j--;
 	i++;
     }
-    comp->steps[comp->nbStep++].op = XSLT_OP_END;
+    xsltCompMatchAdd(ctxt, comp, XSLT_OP_END, NULL, NULL, 0);
+
     /*
      * detect consecutive XSLT_OP_PREDICATE indicating a direct
      * matching should be done.
@@ -413,13 +474,14 @@ xsltReverseCompMatch(xsltCompMatchPtr comp) {
 }
 
 /************************************************************************
- * 									*
- * 		The interpreter for the precompiled patterns		*
- * 									*
+ *									*
+ *		The interpreter for the precompiled patterns		*
+ *									*
  ************************************************************************/
 
 static int
-xsltPatPushState(xsltStepStates *states, int step, xmlNodePtr node) {
+xsltPatPushState(xsltTransformContextPtr ctxt, xsltStepStates *states,
+                 int step, xmlNodePtr node) {
     if ((states->states == NULL) || (states->maxstates <= 0)) {
         states->maxstates = 4;
 	states->nbstates = 0;
@@ -430,8 +492,12 @@ xsltPatPushState(xsltStepStates *states, int step, xmlNodePtr node) {
 
 	tmp = (xsltStepStatePtr) xmlRealloc(states->states,
 			       2 * states->maxstates * sizeof(xsltStepState));
-	if (tmp == NULL)
+	if (tmp == NULL) {
+	    xsltGenericError(xsltGenericErrorContext,
+	     "xsltPatPushState: memory re-allocation failure.\n");
+	    ctxt->state = XSLT_STATE_STOPPED;
 	    return(-1);
+	}
 	states->states = tmp;
 	states->maxstates *= 2;
     }
@@ -448,6 +514,8 @@ xsltPatPushState(xsltStepStates *states, int step, xmlNodePtr node) {
  * @ctxt:  a XSLT process context
  * @comp: the precompiled pattern
  * @node: a node
+ * @nsList: the namespaces in scope
+ * @nsNr: the number of namespaces in scope
  *
  * Test whether the node matches the pattern, do a direct evalutation
  * and not a step by step evaluation.
@@ -456,7 +524,7 @@ xsltPatPushState(xsltStepStates *states, int step, xmlNodePtr node) {
  */
 static int
 xsltTestCompMatchDirect(xsltTransformContextPtr ctxt, xsltCompMatchPtr comp,
-	                xmlNodePtr node) {
+	                xmlNodePtr node, xmlNsPtr *nsList, int nsNr) {
     xsltStepOpPtr sel = NULL;
     xmlDocPtr prevdoc;
     xmlDocPtr doc;
@@ -466,11 +534,7 @@ xsltTestCompMatchDirect(xsltTransformContextPtr ctxt, xsltCompMatchPtr comp,
     int isRVT;
 
     doc = node->doc;
-    if ((doc != NULL) &&
-	(doc->name != NULL) &&
-	(doc->name[0] == ' ') &&
-	(xmlStrEqual(BAD_CAST doc->name,
-		     BAD_CAST " fake node libxslt")))
+    if (XSLT_IS_RES_TREE_FRAG(doc))
 	isRVT = 1;
     else
 	isRVT = 0;
@@ -481,20 +545,32 @@ xsltTestCompMatchDirect(xsltTransformContextPtr ctxt, xsltCompMatchPtr comp,
     ix = XSLT_RUNTIME_EXTRA(ctxt, sel->indexExtra, ival);
     list = (xmlXPathObjectPtr)
 	XSLT_RUNTIME_EXTRA_LST(ctxt, sel->lenExtra);
-    
+
     if ((list == NULL) || (prevdoc != doc)) {
 	xmlXPathObjectPtr newlist;
 	xmlNodePtr parent = node->parent;
 	xmlDocPtr olddoc;
 	xmlNodePtr oldnode;
+	int oldNsNr, oldContextSize, oldProximityPosition;
+	xmlNsPtr *oldNamespaces;
 
 	oldnode = ctxt->xpathCtxt->node;
 	olddoc = ctxt->xpathCtxt->doc;
+	oldNsNr = ctxt->xpathCtxt->nsNr;
+	oldNamespaces = ctxt->xpathCtxt->namespaces;
+	oldContextSize = ctxt->xpathCtxt->contextSize;
+	oldProximityPosition = ctxt->xpathCtxt->proximityPosition;
 	ctxt->xpathCtxt->node = node;
 	ctxt->xpathCtxt->doc = doc;
+	ctxt->xpathCtxt->namespaces = nsList;
+	ctxt->xpathCtxt->nsNr = nsNr;
 	newlist = xmlXPathEval(comp->pattern, ctxt->xpathCtxt);
 	ctxt->xpathCtxt->node = oldnode;
 	ctxt->xpathCtxt->doc = olddoc;
+	ctxt->xpathCtxt->namespaces = oldNamespaces;
+	ctxt->xpathCtxt->nsNr = oldNsNr;
+	ctxt->xpathCtxt->contextSize = oldContextSize;
+	ctxt->xpathCtxt->proximityPosition = oldProximityPosition;
 	if (newlist == NULL)
 	    return(-1);
 	if (newlist->type != XPATH_NODESET) {
@@ -505,7 +581,7 @@ xsltTestCompMatchDirect(xsltTransformContextPtr ctxt, xsltCompMatchPtr comp,
 
 	if ((parent == NULL) || (node->doc == NULL) || isRVT)
 	    nocache = 1;
-	
+
 	if (nocache == 0) {
 	    if (list != NULL)
 		xmlXPathFreeObject(list);
@@ -634,32 +710,6 @@ restart:
 			goto rollback;
 		}
 		continue;
-            case XSLT_OP_CHILD: {
-		xmlNodePtr lst;
-
-		if ((node->type != XML_ELEMENT_NODE) &&
-		    (node->type != XML_DOCUMENT_NODE) &&
-#ifdef LIBXML_DOCB_ENABLED
-		    (node->type != XML_DOCB_DOCUMENT_NODE) &&
-#endif
-		    (node->type != XML_HTML_DOCUMENT_NODE))
-		    goto rollback;
-
-		lst = node->children;
-
-		if (step->value != NULL) {
-		    while (lst != NULL) {
-			if ((lst->type == XML_ELEMENT_NODE) &&
-			    (step->value[0] == lst->name[0]) &&
-			    (xmlStrEqual(step->value, lst->name)))
-			    break;
-			lst = lst->next;
-		    }
-		    if (lst != NULL)
-			continue;
-		}
-		goto rollback;
-	    }
             case XSLT_OP_ATTR:
 		if (node->type != XML_ATTRIBUTE_NODE)
 		    goto rollback;
@@ -713,8 +763,8 @@ restart:
 		    if (step->op == XSLT_OP_ROOT)
 			goto found;
 		    /* added NS, ID and KEY as a result of bug 168208 */
-		    if ((step->op != XSLT_OP_ELEM) && 
-			(step->op != XSLT_OP_ALL) && 
+		    if ((step->op != XSLT_OP_ELEM) &&
+			(step->op != XSLT_OP_ALL) &&
 			(step->op != XSLT_OP_NS) &&
 			(step->op != XSLT_OP_ID) &&
 			(step->op != XSLT_OP_KEY))
@@ -731,12 +781,12 @@ restart:
 		    goto rollback;
 		node = node->parent;
 		if ((step->op != XSLT_OP_ELEM) && step->op != XSLT_OP_ALL) {
-		    xsltPatPushState(&states, i, node);
+		    xsltPatPushState(ctxt, &states, i, node);
 		    continue;
 		}
 		i++;
 		if (step->value == NULL) {
-		    xsltPatPushState(&states, i - 1, node);
+		    xsltPatPushState(ctxt, &states, i - 1, node);
 		    continue;
 		}
 		while (node != NULL) {
@@ -757,7 +807,7 @@ restart:
 		}
 		if (node == NULL)
 		    goto rollback;
-		xsltPatPushState(&states, i - 1, node);
+		xsltPatPushState(ctxt, &states, i - 1, node);
 		continue;
             case XSLT_OP_ID: {
 		/* TODO Handle IDs decently, must be done differently */
@@ -821,15 +871,12 @@ restart:
 			/* Free the rollback states */
 			xmlFree(states.states);
 		    }
-		    return(xsltTestCompMatchDirect(ctxt, comp, node));
+		    return(xsltTestCompMatchDirect(ctxt, comp, node,
+						   comp->nsList, comp->nsNr));
 		}
 
 		doc = node->doc;
-		if ((doc != NULL) &&
-		    (doc->name != NULL) &&
-		    (doc->name[0] == ' ') &&
-		    (xmlStrEqual(BAD_CAST doc->name,
-		    		 BAD_CAST " fake node libxslt")))
+		if (XSLT_IS_RES_TREE_FRAG(doc))
 		    isRVT = 1;
 		else
 		    isRVT = 0;
@@ -846,11 +893,10 @@ restart:
 		    (node->type == XML_ELEMENT_NODE) &&
 		    (node->parent != NULL)) {
 		    xmlNodePtr previous;
-		    int ix, nocache = 0;
+		    int nocache = 0;
 
 		    previous = (xmlNodePtr)
 			XSLT_RUNTIME_EXTRA(ctxt, sel->previousExtra, ptr);
-		    ix = XSLT_RUNTIME_EXTRA(ctxt, sel->indexExtra, ival);
 		    if ((previous != NULL) &&
 			(previous->parent == node->parent)) {
 			/*
@@ -862,11 +908,12 @@ restart:
 			while (sibling != NULL) {
 			    if (sibling == previous)
 				break;
-			    if ((previous->type == XML_ELEMENT_NODE) &&
+			    if ((sibling->type == XML_ELEMENT_NODE) &&
 				(previous->name != NULL) &&
 				(sibling->name != NULL) &&
 				(previous->name[0] == sibling->name[0]) &&
-				(xmlStrEqual(previous->name, sibling->name))) {
+				(xmlStrEqual(previous->name, sibling->name)))
+			    {
 				if ((sel->value2 == NULL) ||
 				    ((sibling->ns != NULL) &&
 				     (xmlStrEqual(sel->value2,
@@ -882,16 +929,26 @@ restart:
 			    while (sibling != NULL) {
 				if (sibling == previous)
 				    break;
-				if ((sel->value2 == NULL) ||
-				    ((sibling->ns != NULL) &&
-				     (xmlStrEqual(sel->value2,
-						  sibling->ns->href))))
-				    indx--;
+				if ((sibling->type == XML_ELEMENT_NODE) &&
+				    (previous->name != NULL) &&
+				    (sibling->name != NULL) &&
+				    (previous->name[0] == sibling->name[0]) &&
+				    (xmlStrEqual(previous->name, sibling->name)))
+				{
+				    if ((sel->value2 == NULL) ||
+					((sibling->ns != NULL) &&
+					(xmlStrEqual(sel->value2,
+					sibling->ns->href))))
+				    {
+					indx--;
+				    }
+				}
 				sibling = sibling->next;
 			    }
 			}
 			if (sibling != NULL) {
-			    pos = ix + indx;
+		            pos = XSLT_RUNTIME_EXTRA(ctxt,
+                                sel->indexExtra, ival) + indx;
 			    /*
 			     * If the node is in a Value Tree we need to
 			     * save len, but cannot cache the node!
@@ -907,15 +964,16 @@ restart:
 				        sel->indexExtra, ival) = pos;
 				}
 			    }
-			    ix = pos;
 			} else
 			    pos = 0;
 		    } else {
 			/*
 			 * recompute the index
 			 */
-			xmlNodePtr siblings = node->parent->children;
 			xmlNodePtr parent = node->parent;
+			xmlNodePtr siblings = NULL;
+
+                        if (parent) siblings = parent->children;
 
 			while (siblings != NULL) {
 			    if (siblings->type == XML_ELEMENT_NODE) {
@@ -966,11 +1024,10 @@ restart:
 		} else if ((sel != NULL) && (sel->op == XSLT_OP_ALL) &&
 			   (node->type == XML_ELEMENT_NODE)) {
 		    xmlNodePtr previous;
-		    int ix, nocache = 0;
+		    int nocache = 0;
 
 		    previous = (xmlNodePtr)
 			XSLT_RUNTIME_EXTRA(ctxt, sel->previousExtra, ptr);
-		    ix = XSLT_RUNTIME_EXTRA(ctxt, sel->indexExtra, ival);
 		    if ((previous != NULL) &&
 			(previous->parent == node->parent)) {
 			/*
@@ -999,7 +1056,8 @@ restart:
 			    }
 			}
 			if (sibling != NULL) {
-			    pos = ix + indx;
+			    pos = XSLT_RUNTIME_EXTRA(ctxt,
+                                sel->indexExtra, ival) + indx;
 			    /*
 			     * If the node is in a Value Tree we cannot
 			     * cache it !
@@ -1018,8 +1076,10 @@ restart:
 			/*
 			 * recompute the index
 			 */
-			xmlNodePtr siblings = node->parent->children;
 			xmlNodePtr parent = node->parent;
+			xmlNodePtr siblings = NULL;
+
+                        if (parent) siblings = parent->children;
 
 			while (siblings != NULL) {
 			    if (siblings->type == XML_ELEMENT_NODE) {
@@ -1175,17 +1235,17 @@ xsltTestCompMatchList(xsltTransformContextPtr ctxt, xmlNodePtr node,
 #define NXT(val) ctxt->cur[(val)]
 #define CUR_PTR ctxt->cur
 
-#define SKIP_BLANKS 							\
+#define SKIP_BLANKS							\
     while (IS_BLANK_CH(CUR)) NEXT
 
 #define CURRENT (*ctxt->cur)
 #define NEXT ((*ctxt->cur) ?  ctxt->cur++: ctxt->cur)
 
 
-#define PUSH(op, val, val2, novar) 						\
+#define PUSH(op, val, val2, novar)						\
     if (xsltCompMatchAdd(ctxt, ctxt->comp, (op), (val), (val2), (novar))) goto error;
 
-#define SWAP() 						\
+#define SWAP()						\
     xsltSwapTopCompMatch(ctxt->comp);
 
 #define XSLT_ERROR(X)							\
@@ -1256,46 +1316,6 @@ xsltScanLiteral(xsltParserContextPtr ctxt) {
 }
 
 /**
- * xsltScanName:
- * @ctxt:  the XPath Parser context
- *
- * [4] NameChar ::= Letter | Digit | '.' | '-' | '_' | 
- *                  CombiningChar | Extender
- *
- * [5] Name ::= (Letter | '_' | ':') (NameChar)*
- *
- * [6] Names ::= Name (S Name)*
- *
- * Returns the Name parsed or NULL
- */
-
-static xmlChar *
-xsltScanName(xsltParserContextPtr ctxt) {
-    const xmlChar *q, *cur;
-    xmlChar *ret = NULL;
-    int val, len;
-
-    SKIP_BLANKS;
-
-    cur = q = CUR_PTR;
-    val = xmlStringCurrentChar(NULL, cur, &len);
-    if (!IS_LETTER(val) && (val != '_') && (val != ':'))
-	return(NULL);
-
-    while ((IS_LETTER(val)) || (IS_DIGIT(val)) ||
-           (val == '.') || (val == '-') ||
-	   (val == '_') || 
-	   (IS_COMBINING(val)) ||
-	   (IS_EXTENDER(val))) {
-	cur += len;
-	val = xmlStringCurrentChar(NULL, cur, &len);
-    }
-    ret = xmlStrndup(q, cur - q);
-    CUR_PTR = cur;
-    return(ret);
-}
-
-/**
  * xsltScanNCName:
  * @ctxt:  the XPath Parser context
  *
@@ -1330,30 +1350,6 @@ xsltScanNCName(xsltParserContextPtr ctxt) {
     return(ret);
 }
 
-/**
- * xsltScanQName:
- * @ctxt:  the XPath Parser context
- * @prefix:  the place to store the prefix
- *
- * Parse a qualified name
- *
- * Returns the Name parsed or NULL
- */
-
-static xmlChar *
-xsltScanQName(xsltParserContextPtr ctxt, xmlChar **prefix) {
-    xmlChar *ret = NULL;
-
-    *prefix = NULL;
-    ret = xsltScanNCName(ctxt);
-    if (CUR == ':') {
-        *prefix = ret;
-	NEXT;
-	ret = xsltScanNCName(ctxt);
-    }
-    return(ret);
-}
-
 /*
  * xsltCompileIdKeyPattern:
  * @ctxt:  the compilation context
@@ -1373,7 +1369,7 @@ xsltScanQName(xsltParserContextPtr ctxt, xmlChar **prefix) {
  */
 static void
 xsltCompileIdKeyPattern(xsltParserContextPtr ctxt, xmlChar *name,
-		int aid, int novar) {
+		int aid, int novar, xsltAxis axis) {
     xmlChar *lit = NULL;
     xmlChar *lit2 = NULL;
 
@@ -1384,26 +1380,46 @@ xsltCompileIdKeyPattern(xsltParserContextPtr ctxt, xmlChar *name,
 	return;
     }
     if ((aid) && (xmlStrEqual(name, (const xmlChar *)"id"))) {
+	if (axis != 0) {
+	    xsltTransformError(NULL, NULL, NULL,
+		    "xsltCompileIdKeyPattern : NodeTest expected\n");
+	    ctxt->error = 1;
+	    return;
+	}
 	NEXT;
 	SKIP_BLANKS;
         lit = xsltScanLiteral(ctxt);
-	if (ctxt->error)
+	if (ctxt->error) {
+	    xsltTransformError(NULL, NULL, NULL,
+		    "xsltCompileIdKeyPattern : Literal expected\n");
 	    return;
+	}
 	SKIP_BLANKS;
 	if (CUR != ')') {
 	    xsltTransformError(NULL, NULL, NULL,
 		    "xsltCompileIdKeyPattern : ) expected\n");
+	    xmlFree(lit);
 	    ctxt->error = 1;
 	    return;
 	}
 	NEXT;
 	PUSH(XSLT_OP_ID, lit, NULL, novar);
+	lit = NULL;
     } else if ((aid) && (xmlStrEqual(name, (const xmlChar *)"key"))) {
+	if (axis != 0) {
+	    xsltTransformError(NULL, NULL, NULL,
+		    "xsltCompileIdKeyPattern : NodeTest expected\n");
+	    ctxt->error = 1;
+	    return;
+	}
 	NEXT;
 	SKIP_BLANKS;
         lit = xsltScanLiteral(ctxt);
-	if (ctxt->error)
+	if (ctxt->error) {
+	    xsltTransformError(NULL, NULL, NULL,
+		    "xsltCompileIdKeyPattern : Literal expected\n");
 	    return;
+	}
 	SKIP_BLANKS;
 	if (CUR != ',') {
 	    xsltTransformError(NULL, NULL, NULL,
@@ -1414,25 +1430,36 @@ xsltCompileIdKeyPattern(xsltParserContextPtr ctxt, xmlChar *name,
 	NEXT;
 	SKIP_BLANKS;
         lit2 = xsltScanLiteral(ctxt);
-	if (ctxt->error)
+	if (ctxt->error) {
+	    xsltTransformError(NULL, NULL, NULL,
+		    "xsltCompileIdKeyPattern : Literal expected\n");
+	    xmlFree(lit);
 	    return;
+	}
 	SKIP_BLANKS;
 	if (CUR != ')') {
 	    xsltTransformError(NULL, NULL, NULL,
 		    "xsltCompileIdKeyPattern : ) expected\n");
+	    xmlFree(lit);
+	    xmlFree(lit2);
 	    ctxt->error = 1;
 	    return;
 	}
 	NEXT;
-	/* TODO: support namespace in keys */
+	/* URGENT TODO: support namespace in keys */
 	PUSH(XSLT_OP_KEY, lit, lit2, novar);
+	lit = NULL;
+	lit2 = NULL;
     } else if (xmlStrEqual(name, (const xmlChar *)"processing-instruction")) {
 	NEXT;
 	SKIP_BLANKS;
 	if (CUR != ')') {
 	    lit = xsltScanLiteral(ctxt);
-	    if (ctxt->error)
+	    if (ctxt->error) {
+		xsltTransformError(NULL, NULL, NULL,
+			"xsltCompileIdKeyPattern : Literal expected\n");
 		return;
+	    }
 	    SKIP_BLANKS;
 	    if (CUR != ')') {
 		xsltTransformError(NULL, NULL, NULL,
@@ -1443,6 +1470,7 @@ xsltCompileIdKeyPattern(xsltParserContextPtr ctxt, xmlChar *name,
 	}
 	NEXT;
 	PUSH(XSLT_OP_PI, lit, NULL, novar);
+	lit = NULL;
     } else if (xmlStrEqual(name, (const xmlChar *)"text")) {
 	NEXT;
 	SKIP_BLANKS;
@@ -1475,7 +1503,12 @@ xsltCompileIdKeyPattern(xsltParserContextPtr ctxt, xmlChar *name,
 	    return;
 	}
 	NEXT;
-	PUSH(XSLT_OP_NODE, NULL, NULL, novar);
+	if (axis == AXIS_ATTRIBUTE) {
+	    PUSH(XSLT_OP_ATTR, NULL, NULL, novar);
+	}
+	else {
+	    PUSH(XSLT_OP_NODE, NULL, NULL, novar);
+	}
     } else if (aid) {
 	xsltTransformError(NULL, NULL, NULL,
 	    "xsltCompileIdKeyPattern : expecting 'key' or 'id' or node type\n");
@@ -1488,8 +1521,7 @@ xsltCompileIdKeyPattern(xsltParserContextPtr ctxt, xmlChar *name,
 	return;
     }
 error:
-    if (name != NULL)
-	xmlFree(name);
+    return;
 }
 
 /**
@@ -1501,7 +1533,7 @@ error:
  * Compile the XSLT StepPattern and generates a precompiled
  * form suitable for fast matching.
  *
- * [5] StepPattern ::= ChildOrAttributeAxisSpecifier NodeTest Predicate* 
+ * [5] StepPattern ::= ChildOrAttributeAxisSpecifier NodeTest Predicate*
  * [6] ChildOrAttributeAxisSpecifier ::= AbbreviatedAxisSpecifier
  *                                     | ('child' | 'attribute') '::'
  * from XPath
@@ -1520,51 +1552,25 @@ xsltCompileStepPattern(xsltParserContextPtr ctxt, xmlChar *token, int novar) {
     const xmlChar *URI = NULL;
     xmlChar *URL = NULL;
     int level;
+    xsltAxis axis = 0;
 
     SKIP_BLANKS;
     if ((token == NULL) && (CUR == '@')) {
-	xmlChar *prefix = NULL;
-
 	NEXT;
-	if (CUR == '*') {
-	    NEXT;
-	    PUSH(XSLT_OP_ATTR, NULL, NULL, novar);
-	    goto parse_predicate;
-	}
-	token = xsltScanQName(ctxt, &prefix);
-	if (prefix != NULL) {
-	    xmlNsPtr ns;
-
-	    ns = xmlSearchNs(ctxt->doc, ctxt->elem, prefix);
-	    if (ns == NULL) {
-		xsltTransformError(NULL, NULL, NULL,
-		"xsltCompileStepPattern : no namespace bound to prefix %s\n",
-				 prefix);
-	    } else {
-		URL = xmlStrdup(ns->href);
-	    }
-	    xmlFree(prefix);
-	}
-	if (token == NULL) {
-	    if (CUR == '*') {
-		NEXT;
-		PUSH(XSLT_OP_ATTR, NULL, URL, novar);
-		return;
-	    }
-	    xsltTransformError(NULL, NULL, NULL,
-		    "xsltCompileStepPattern : Name expected\n");
-	    ctxt->error = 1;
-	    goto error;
-	}
-	PUSH(XSLT_OP_ATTR, token, URL, novar);
-	goto parse_predicate;
+        axis = AXIS_ATTRIBUTE;
     }
+parse_node_test:
     if (token == NULL)
-	token = xsltScanName(ctxt);
+	token = xsltScanNCName(ctxt);
     if (token == NULL) {
 	if (CUR == '*') {
 	    NEXT;
-	    PUSH(XSLT_OP_ALL, token, NULL, novar);
+	    if (axis == AXIS_ATTRIBUTE) {
+                PUSH(XSLT_OP_ATTR, NULL, NULL, novar);
+            }
+            else {
+                PUSH(XSLT_OP_ALL, NULL, NULL, novar);
+            }
 	    goto parse_predicate;
 	} else {
 	    xsltTransformError(NULL, NULL, NULL,
@@ -1577,7 +1583,9 @@ xsltCompileStepPattern(xsltParserContextPtr ctxt, xmlChar *token, int novar) {
 
     SKIP_BLANKS;
     if (CUR == '(') {
-	xsltCompileIdKeyPattern(ctxt, token, 0, novar);
+	xsltCompileIdKeyPattern(ctxt, token, 0, novar, axis);
+	xmlFree(token);
+	token = NULL;
 	if (ctxt->error)
 	    goto error;
     } else if (CUR == ':') {
@@ -1589,22 +1597,32 @@ xsltCompileStepPattern(xsltParserContextPtr ctxt, xmlChar *token, int novar) {
 	    /*
 	     * This is a namespace match
 	     */
-	    token = xsltScanName(ctxt);
+	    token = xsltScanNCName(ctxt);
 	    ns = xmlSearchNs(ctxt->doc, ctxt->elem, prefix);
 	    if (ns == NULL) {
 		xsltTransformError(NULL, NULL, NULL,
 	    "xsltCompileStepPattern : no namespace bound to prefix %s\n",
 				 prefix);
+		xmlFree(prefix);
+		prefix=NULL;
 		ctxt->error = 1;
 		goto error;
 	    } else {
 		URL = xmlStrdup(ns->href);
 	    }
 	    xmlFree(prefix);
+	    prefix=NULL;
 	    if (token == NULL) {
 		if (CUR == '*') {
 		    NEXT;
-		    PUSH(XSLT_OP_NS, URL, NULL, novar);
+                    if (axis == AXIS_ATTRIBUTE) {
+                        PUSH(XSLT_OP_ATTR, NULL, URL, novar);
+			URL = NULL;
+                    }
+                    else {
+                        PUSH(XSLT_OP_NS, URL, NULL, novar);
+			URL = NULL;
+                    }
 		} else {
 		    xsltTransformError(NULL, NULL, NULL,
 			    "xsltCompileStepPattern : Name expected\n");
@@ -1612,54 +1630,29 @@ xsltCompileStepPattern(xsltParserContextPtr ctxt, xmlChar *token, int novar) {
 		    goto error;
 		}
 	    } else {
-		PUSH(XSLT_OP_ELEM, token, URL, novar);
+                if (axis == AXIS_ATTRIBUTE) {
+                    PUSH(XSLT_OP_ATTR, token, URL, novar);
+		    token = NULL;
+		    URL = NULL;
+                }
+                else {
+                    PUSH(XSLT_OP_ELEM, token, URL, novar);
+		    token = NULL;
+		    URL = NULL;
+                }
 	    }
 	} else {
+	    if (axis != 0) {
+		xsltTransformError(NULL, NULL, NULL,
+		    "xsltCompileStepPattern : NodeTest expected\n");
+		ctxt->error = 1;
+		goto error;
+	    }
 	    NEXT;
 	    if (xmlStrEqual(token, (const xmlChar *) "child")) {
-		xmlFree(token);
-		token = xsltScanName(ctxt);
-		if (token == NULL) {
-	            if (CUR == '*') {
-            	        NEXT;
-	                PUSH(XSLT_OP_ALL, token, NULL, novar);
-	                goto parse_predicate;
-	            } else {
-		        xsltTransformError(NULL, NULL, NULL,
-			    "xsltCompileStepPattern : QName expected\n");
-		        ctxt->error = 1;
-		        goto error;
-		    }
-		}
-		URI = xsltGetQNameURI(ctxt->elem, &token);
-		if (token == NULL) {
-		    ctxt->error = 1;
-		    goto error;
-		} else {
-		    name = xmlStrdup(token);
-		    if (URI != NULL)
-			URL = xmlStrdup(URI);
-		}
-		PUSH(XSLT_OP_CHILD, name, URL, novar);
+	        axis = AXIS_CHILD;
 	    } else if (xmlStrEqual(token, (const xmlChar *) "attribute")) {
-		xmlFree(token);
-		token = xsltScanName(ctxt);
-		if (token == NULL) {
-		    xsltTransformError(NULL, NULL, NULL,
-			    "xsltCompileStepPattern : QName expected\n");
-		    ctxt->error = 1;
-		    goto error;
-		}
-		URI = xsltGetQNameURI(ctxt->elem, &token);
-		if (token == NULL) {
-		    ctxt->error = 1;
-		    goto error;
-		} else {
-		    name = xmlStrdup(token);
-		    if (URI != NULL)
-			URL = xmlStrdup(URI);
-		}
-		PUSH(XSLT_OP_ATTR, name, URL, novar);
+	        axis = AXIS_ATTRIBUTE;
 	    } else {
 		xsltTransformError(NULL, NULL, NULL,
 		    "xsltCompileStepPattern : 'child' or 'attribute' expected\n");
@@ -1667,10 +1660,11 @@ xsltCompileStepPattern(xsltParserContextPtr ctxt, xmlChar *token, int novar) {
 		goto error;
 	    }
 	    xmlFree(token);
+	    token = NULL;
+            SKIP_BLANKS;
+            token = xsltScanNCName(ctxt);
+	    goto parse_node_test;
 	}
-    } else if (CUR == '*') {
-	NEXT;
-	PUSH(XSLT_OP_ALL, token, NULL, novar);
     } else {
 	URI = xsltGetQNameURI(ctxt->elem, &token);
 	if (token == NULL) {
@@ -1679,7 +1673,16 @@ xsltCompileStepPattern(xsltParserContextPtr ctxt, xmlChar *token, int novar) {
 	}
 	if (URI != NULL)
 	    URL = xmlStrdup(URI);
-	PUSH(XSLT_OP_ELEM, token, URL, novar);
+        if (axis == AXIS_ATTRIBUTE) {
+            PUSH(XSLT_OP_ATTR, token, URL, novar);
+	    token = NULL;
+	    URL = NULL;
+        }
+        else {
+            PUSH(XSLT_OP_ELEM, token, URL, novar);
+	    token = NULL;
+	    URL = NULL;
+        }
     }
 parse_predicate:
     SKIP_BLANKS;
@@ -1718,6 +1721,7 @@ parse_predicate:
         }
 	ret = xmlStrndup(q, CUR_PTR - q);
 	PUSH(XSLT_OP_PREDICATE, ret, NULL, novar);
+	ret = NULL;
 	/* push the predicate lower than local test */
 	SWAP();
 	NEXT;
@@ -1816,7 +1820,7 @@ xsltCompileLocationPathPattern(xsltParserContextPtr ctxt, int novar) {
 	xsltCompileRelativePathPattern(ctxt, NULL, novar);
     } else {
 	xmlChar *name;
-	name = xsltScanName(ctxt);
+	name = xsltScanNCName(ctxt);
 	if (name == NULL) {
 	    xsltTransformError(NULL, NULL, NULL,
 		    "xsltCompileLocationPathPattern : Name expected\n");
@@ -1825,7 +1829,9 @@ xsltCompileLocationPathPattern(xsltParserContextPtr ctxt, int novar) {
 	}
 	SKIP_BLANKS;
 	if ((CUR == '(') && !xmlXPathIsNodeType(name)) {
-	    xsltCompileIdKeyPattern(ctxt, name, 1, novar);
+	    xsltCompileIdKeyPattern(ctxt, name, 1, novar, 0);
+	    xmlFree(name);
+	    name = NULL;
 	    if ((CUR == '/') && (NXT(1) == '/')) {
 		PUSH(XSLT_OP_ANCESTOR, NULL, NULL, novar);
 		NEXT;
@@ -1903,6 +1909,8 @@ xsltCompilePatternInternal(const xmlChar *pattern, xmlDocPtr doc,
 		while ((pattern[end] != 0) && (pattern[end] != '"'))
 		    end++;
 	    }
+	    if (pattern[end] == 0)
+	        break;
 	    end++;
 	}
 	if (current == end) {
@@ -1957,7 +1965,7 @@ xsltCompilePatternInternal(const xmlChar *pattern, xmlDocPtr doc,
 	/*
 	 * Reverse for faster interpretation.
 	 */
-	xsltReverseCompMatch(element);
+	xsltReverseCompMatch(ctxt, element);
 
 	/*
 	 * Set-up the priority
@@ -2063,7 +2071,12 @@ xsltCompilePattern(const xmlChar *pattern, xmlDocPtr doc,
 int
 xsltAddTemplate(xsltStylesheetPtr style, xsltTemplatePtr cur,
 	        const xmlChar *mode, const xmlChar *modeURI) {
-    xsltCompMatchPtr pat, list, *top = NULL, next;
+    xsltCompMatchPtr pat, list, next;
+    /*
+     * 'top' will point to style->xxxMatch ptr - declaring as 'void'
+     *  avoids gcc 'type-punned pointer' warning.
+     */
+    void **top = NULL;
     const xmlChar *name = NULL;
     float priority;              /* the priority */
 
@@ -2073,11 +2086,13 @@ xsltAddTemplate(xsltStylesheetPtr style, xsltTemplatePtr cur,
     priority = cur->priority;
     pat = xsltCompilePatternInternal(cur->match, style->doc, cur->elem,
 		    style, NULL, 1);
+    if (pat == NULL)
+	return(-1);
     while (pat) {
 	next = pat->next;
 	pat->next = NULL;
 	name = NULL;
-	
+
 	pat->template = cur;
 	if (mode != NULL)
 	    pat->mode = xmlDictLookup(style->dict, mode, -1);
@@ -2094,24 +2109,23 @@ xsltAddTemplate(xsltStylesheetPtr style, xsltTemplatePtr cur,
 	    if (pat->steps[0].value != NULL)
 		name = pat->steps[0].value;
 	    else
-		top = (xsltCompMatchPtr *) &(style->attrMatch);
+		top = &(style->attrMatch);
 	    break;
-        case XSLT_OP_CHILD:
         case XSLT_OP_PARENT:
         case XSLT_OP_ANCESTOR:
-	    top = (xsltCompMatchPtr *) &(style->elemMatch);
+	    top = &(style->elemMatch);
 	    break;
         case XSLT_OP_ROOT:
-	    top = (xsltCompMatchPtr *) &(style->rootMatch);
+	    top = &(style->rootMatch);
 	    break;
         case XSLT_OP_KEY:
-	    top = (xsltCompMatchPtr *) &(style->keyMatch);
+	    top = &(style->keyMatch);
 	    break;
         case XSLT_OP_ID:
 	    /* TODO optimize ID !!! */
         case XSLT_OP_NS:
         case XSLT_OP_ALL:
-	    top = (xsltCompMatchPtr *) &(style->elemMatch);
+	    top = &(style->elemMatch);
 	    break;
         case XSLT_OP_END:
 	case XSLT_OP_PREDICATE:
@@ -2127,20 +2141,20 @@ xsltAddTemplate(xsltStylesheetPtr style, xsltTemplatePtr cur,
 	    if (pat->steps[0].value != NULL)
 		name = pat->steps[0].value;
 	    else
-		top = (xsltCompMatchPtr *) &(style->piMatch);
+		top = &(style->piMatch);
 	    break;
 	case XSLT_OP_COMMENT:
-	    top = (xsltCompMatchPtr *) &(style->commentMatch);
+	    top = &(style->commentMatch);
 	    break;
 	case XSLT_OP_TEXT:
-	    top = (xsltCompMatchPtr *) &(style->textMatch);
+	    top = &(style->textMatch);
 	    break;
         case XSLT_OP_ELEM:
 	case XSLT_OP_NODE:
 	    if (pat->steps[0].value != NULL)
 		name = pat->steps[0].value;
 	    else
-		top = (xsltCompMatchPtr *) &(style->elemMatch);
+		top = &(style->elemMatch);
 	    break;
 	}
 	if (name != NULL) {
@@ -2217,6 +2231,40 @@ xsltAddTemplate(xsltStylesheetPtr style, xsltTemplatePtr cur,
     return(0);
 }
 
+static int
+xsltComputeAllKeys(xsltTransformContextPtr ctxt, xmlNodePtr contextNode)
+{
+    if ((ctxt == NULL) || (contextNode == NULL)) {
+	xsltTransformError(ctxt, NULL, ctxt->inst,
+	    "Internal error in xsltComputeAllKeys(): "
+	    "Bad arguments.\n");
+	return(-1);
+    }
+
+    if (ctxt->document == NULL) {
+	/*
+	* The document info will only be NULL if we have a RTF.
+	*/
+	if (contextNode->doc->_private != NULL)
+	    goto doc_info_mismatch;
+	/*
+	* On-demand creation of the document info (needed for keys).
+	*/
+	ctxt->document = xsltNewDocument(ctxt, contextNode->doc);
+	if (ctxt->document == NULL)
+	    return(-1);
+    }
+    return xsltInitAllDocKeys(ctxt);
+
+doc_info_mismatch:
+    xsltTransformError(ctxt, NULL, ctxt->inst,
+	"Internal error in xsltComputeAllKeys(): "
+	"The context's document info doesn't match the "
+	"document info of the current result tree.\n");
+    ctxt->state = XSLT_STATE_STOPPED;
+    return(-1);
+}
+
 /**
  * xsltGetTemplate:
  * @ctxt:  a XSLT process context
@@ -2230,7 +2278,8 @@ xsltAddTemplate(xsltStylesheetPtr style, xsltTemplatePtr cur,
  */
 xsltTemplatePtr
 xsltGetTemplate(xsltTransformContextPtr ctxt, xmlNodePtr node,
-	        xsltStylesheetPtr style) {
+	        xsltStylesheetPtr style)
+{
     xsltStylesheetPtr curstyle;
     xsltTemplatePtr ret = NULL;
     const xmlChar *name = NULL;
@@ -2403,6 +2452,7 @@ xsltGetTemplate(xsltTransformContextPtr ctxt, xmlNodePtr node,
 	    }
 	}
 
+keyed_match:
 	if (keyed) {
 	    list = curstyle->keyMatch;
 	    while ((list != NULL) &&
@@ -2416,6 +2466,41 @@ xsltGetTemplate(xsltTransformContextPtr ctxt, xmlNodePtr node,
 		list = list->next;
 	    }
 	}
+	else if (ctxt->hasTemplKeyPatterns &&
+	    ((ctxt->document == NULL) ||
+	     (ctxt->document->nbKeysComputed < ctxt->nbKeys)))
+	{
+	    /*
+	    * Compute all remaining keys for this document.
+	    *
+	    * REVISIT TODO: I think this could be further optimized.
+	    */
+	    if (xsltComputeAllKeys(ctxt, node) == -1)
+		goto error;
+
+	    switch (node->type) {
+		case XML_ELEMENT_NODE:
+		    if (node->psvi != NULL) keyed = 1;
+		    break;
+		case XML_ATTRIBUTE_NODE:
+		    if (((xmlAttrPtr) node)->psvi != NULL) keyed = 1;
+		    break;
+		case XML_TEXT_NODE:
+		case XML_CDATA_SECTION_NODE:
+		case XML_COMMENT_NODE:
+		case XML_PI_NODE:
+		    if (node->psvi != NULL) keyed = 1;
+		    break;
+		case XML_DOCUMENT_NODE:
+		case XML_HTML_DOCUMENT_NODE:
+		    if (((xmlDocPtr) node)->psvi != NULL) keyed = 1;
+		    break;
+		default:
+		    break;
+	    }
+	    if (keyed)
+		goto keyed_match;
+	}
 	if (ret != NULL)
 	    return(ret);
 
@@ -2424,6 +2509,8 @@ xsltGetTemplate(xsltTransformContextPtr ctxt, xmlNodePtr node,
 	 */
 	curstyle = xsltNextImport(curstyle);
     }
+
+error:
     return(NULL);
 }
 

@@ -18,7 +18,13 @@
 extern "C" {
 #endif
 
+/**
+ * NODE_IS_KEYED:
+ *
+ * check for bit 15 set
+ */
 #define NODE_IS_KEYED (1 >> 15)
+
 XSLTPUBFUN int XSLTCALL
 		xsltAddKey		(xsltStylesheetPtr style,
 					 const xmlChar *name,
@@ -26,17 +32,17 @@ XSLTPUBFUN int XSLTCALL
 					 const xmlChar *match,
 					 const xmlChar *use,
 					 xmlNodePtr inst);
-XSLTPUBFUN xmlNodeSetPtr XSLTCALL	
+XSLTPUBFUN xmlNodeSetPtr XSLTCALL
 		xsltGetKey		(xsltTransformContextPtr ctxt,
 					 const xmlChar *name,
 					 const xmlChar *nameURI,
 					 const xmlChar *value);
-XSLTPUBFUN void XSLTCALL		
+XSLTPUBFUN void XSLTCALL
 		xsltInitCtxtKeys	(xsltTransformContextPtr ctxt,
 					 xsltDocumentPtr doc);
-XSLTPUBFUN void XSLTCALL		
+XSLTPUBFUN void XSLTCALL
 		xsltFreeKeys		(xsltStylesheetPtr style);
-XSLTPUBFUN void XSLTCALL		
+XSLTPUBFUN void XSLTCALL
 		xsltFreeDocumentKeys	(xsltDocumentPtr doc);
 
 #ifdef __cplusplus

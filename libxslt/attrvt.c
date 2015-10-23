@@ -147,7 +147,7 @@ static xsltAttrVTPtr
 xsltSetAttrVTsegment(xsltAttrVTPtr avt, void *val) {
     if (avt->nb_seg >= avt->max_seg) {
 	avt = (xsltAttrVTPtr) xmlRealloc(avt, sizeof(xsltAttrVT) +
-	    		avt->max_seg * sizeof(void *));
+			avt->max_seg * sizeof(void *));
 	if (avt == NULL) {
 	    return NULL;
 	}
@@ -178,10 +178,11 @@ xsltCompileAttr(xsltStylesheetPtr style, xmlAttrPtr attr) {
 
     if ((style == NULL) || (attr == NULL) || (attr->children == NULL))
         return;
-    if ((attr->children->type != XML_TEXT_NODE) || 
+    if ((attr->children->type != XML_TEXT_NODE) ||
         (attr->children->next != NULL)) {
         xsltTransformError(NULL, style, attr->parent,
-	        "Attribute %s content is not a text node\n", attr->name);
+	    "Attribute '%s': The content is expected to be a single text "
+	    "node when compiling an AVT.\n", attr->name);
 	style->errors++;
 	return;
     }
@@ -200,8 +201,12 @@ xsltCompileAttr(xsltStylesheetPtr style, xmlAttrPtr attr) {
 #endif
         return;
     }
+    /*
+    * Create a new AVT object.
+    */
     avt = xsltNewAttrVT(style);
-    if (avt == NULL) return;
+    if (avt == NULL)
+	return;
     attr->psvi = avt;
 
     avt->nsList = xmlGetNsList(attr->doc, attr->parent);
@@ -223,7 +228,7 @@ xsltCompileAttr(xsltStylesheetPtr style, xmlAttrPtr attr) {
 	    }
 	    if (*(cur+1) == '}') {	/* skip empty AVT */
 		ret = xmlStrncat(ret, str, cur - str);
-	        cur+=2;
+	        cur += 2;
 		str = cur;
 		continue;
 	    }
@@ -232,23 +237,37 @@ xsltCompileAttr(xsltStylesheetPtr style, xmlAttrPtr attr) {
 		str = cur;
 		if (avt->nb_seg == 0)
 		    avt->strstart = 1;
-		if ((avt=xsltSetAttrVTsegment(avt, (void *) ret)) == NULL)
+		if ((avt = xsltSetAttrVTsegment(avt, (void *) ret)) == NULL)
 		    goto error;
 		ret = NULL;
 		lastavt = 0;
 	    }
 
 	    cur++;
-	    while ((*cur != 0) && (*cur != '}')) cur++;
+	    while ((*cur != 0) && (*cur != '}')) {
+		/* Need to check for literal (bug539741) */
+		if ((*cur == '\'') || (*cur == '"')) {
+		    char delim = *(cur++);
+		    while ((*cur != 0) && (*cur != delim))
+			cur++;
+		    if (*cur != 0)
+			cur++;	/* skip the ending delimiter */
+		} else
+		    cur++;
+	    }
 	    if (*cur == 0) {
 	        xsltTransformError(NULL, style, attr->parent,
-		     "Attribute template %s: unmatched '{'\n", attr->name);
+		     "Attribute '%s': The AVT has an unmatched '{'.\n",
+		     attr->name);
 		style->errors++;
 		goto error;
 	    }
 	    str++;
 	    expr = xmlStrndup(str, cur - str);
 	    if (expr == NULL) {
+		/*
+		* TODO: What needs to be done here?
+		*/
 	        XSLT_TODO
 		goto error;
 	    } else {
@@ -257,18 +276,18 @@ xsltCompileAttr(xsltStylesheetPtr style, xmlAttrPtr attr) {
 		comp = xsltXPathCompile(style, expr);
 		if (comp == NULL) {
 		    xsltTransformError(NULL, style, attr->parent,
-			 "Attribute template %s: failed to compile %s\n",
-			               attr->name, expr);
+			 "Attribute '%s': Failed to compile the expression "
+			 "'%s' in the AVT.\n", attr->name, expr);
 		    style->errors++;
 		    goto error;
 		}
 		if (avt->nb_seg == 0)
 		    avt->strstart = 0;
 		if (lastavt == 1) {
-		    if ((avt=xsltSetAttrVTsegment(avt, NULL)) == NULL)
+		    if ((avt = xsltSetAttrVTsegment(avt, NULL)) == NULL)
 		        goto error;
 		}
-		if ((avt=xsltSetAttrVTsegment(avt, (void *) comp))==NULL)
+		if ((avt = xsltSetAttrVTsegment(avt, (void *) comp)) == NULL)
 		    goto error;
 		lastavt = 1;
 		xmlFree(expr);
@@ -285,7 +304,8 @@ xsltCompileAttr(xsltStylesheetPtr style, xmlAttrPtr attr) {
 		continue;
 	    } else {
 	        xsltTransformError(NULL, style, attr->parent,
-		     "Attribute template %s: unmatched '}'\n", attr->name);
+		     "Attribute '%s': The AVT has an unmatched '}'.\n",
+		     attr->name);
 		goto error;
 	    }
 	} else
@@ -296,7 +316,7 @@ xsltCompileAttr(xsltStylesheetPtr style, xmlAttrPtr attr) {
 	str = cur;
 	if (avt->nb_seg == 0)
 	    avt->strstart = 1;
-	if ((avt=xsltSetAttrVTsegment(avt, (void *) ret)) == NULL)
+	if ((avt = xsltSetAttrVTsegment(avt, (void *) ret)) == NULL)
 	    goto error;
 	ret = NULL;
     }

@@ -26,7 +26,7 @@
 		</affiliation>
 	</author>
 	<!-- date should be the date of the latest change or the release version -->
-	<date>2006-03-05</date>
+	<date>$Date$</date>
 	<!-- still a bit buggy output, will talk to docbook-xsl upstream to fix this -->
 	<!-- <releaseinfo>This is release 0.4 of the xsltproc Manual.</releaseinfo> -->
 	<!-- <edition>0.4</edition> -->
@@ -71,6 +71,9 @@
 			<arg choice="plain"><option>--noout</option></arg>
 			<arg choice="plain"><option>--maxdepth <replaceable class="option">VALUE</replaceable></option></arg>
 			<arg choice="plain"><option>--html</option></arg>
+			<arg choice="plain"><option>--encoding
+			 <replaceable class="option">ENCODING</replaceable>
+			</option></arg>
 			<arg choice="plain"><option>--param
 			 <replaceable class="option">PARAMNAME</replaceable>
 			 <replaceable class="option">PARAMVALUE</replaceable>
@@ -132,22 +135,6 @@
 		By default, output is to <filename class="devicefile">stdout</filename>.
 		You can specify a file for output using
 		the <option>-o</option> or <option>--output</option> option.
-	</para>
-	<para>More information can be found at
-		<itemizedlist>
-			<listitem>
-				<para><citerefentry>
-						<refentrytitle>libxml</refentrytitle>
-						<manvolnum>3</manvolnum>
-					</citerefentry> web page <ulink url="http://www.xmlsoft.org/"/>
-				</para>
-			</listitem>
-			<listitem>
-				<para>
-					W3C <acronym>XSLT</acronym> page <ulink url="http://www.w3.org/TR/xslt"/>
-				</para>
-			</listitem>
-		</itemizedlist>
 	</para>
 </refsect1>
 
@@ -216,7 +203,7 @@
 			before <citerefentry>
 			<refentrytitle>libxslt</refentrytitle>
 			<manvolnum>3</manvolnum>
-		</citerefentry> concludes it is in an infinite loop. The default is 500.
+		</citerefentry> concludes it is in an infinite loop. The default is 3000.
 		</para>
 	</listitem>
 		</varlistentry>
@@ -280,24 +267,47 @@
 			the option with a <replaceable>DIRECTORY</replaceable> directs the
 			output files to the specified directory. This can be
 			useful for multiple outputs (also known as "chunking") or manpage
-			processing. <emphasis role="bold">Note:</emphasis> The given
-			directory <emphasis role="bold">must</emphasis>
-			already exist.
+			processing.
 		</para>
+		<important>
+			<para>
+				The given directory <emphasis role="bold">must</emphasis> already exist.
+			</para>
+		</important>
+		<note>
+			<para>
+				Make sure that <replaceable>FILE</replaceable>
+				and <replaceable>DIRECTORY</replaceable> follow the <quote>URI reference
+				computation</quote> as described in RFC 2396 and laters. This means, that
+				e.g. <option>-o directory</option> will maybe not work,
+				but <option>-o directory/</option> will.
+			</para>
+		</note>
 	</listitem>
 		</varlistentry>
 
+		<varlistentry>
+	<term>
+		<option>--encoding <replaceable>ENCODING</replaceable></option>
+	</term>
+	<listitem>
+		<para>
+			Allow to specify the encoding for the input.
+		</para>
+	</listitem>
+		</varlistentry>
 		<varlistentry>
 	<term>
 		<option>--param <replaceable>PARAMNAME</replaceable> <replaceable>PARAMVALUE</replaceable></option>
 	</term>
 	<listitem>
 		<para>
-			Pass a parameter of name <replaceable>PARAMNAME</replaceable> and
-			value <replaceable>PARAMVALUE</replaceable> to the stylesheet. You
-			may pass multiple name/value pairs up to a maximum of 32. If the
-			value being passed is a string rather than a node identifier,
-			use <option>--stringparam</option> instead.
+Pass a parameter of name <replaceable>PARAMNAME</replaceable> and value
+<replaceable>PARAMVALUE</replaceable> to the stylesheet. You may pass
+multiple name/value pairs up to a maximum of 32. If the value being passed
+is a string, you can use <option>--stringparam</option> instead, to avoid
+additional quote characters that appear in string expressions. Note:
+the XPath expression must be UTF-8 encoded.
 		</para>
 	</listitem>
 		</varlistentry>
@@ -337,7 +347,7 @@
 	</term>
 	<listitem>
 		<para>
-			Pass a paramenter of name <replaceable>PARAMNAME</replaceable> and
+			Pass a parameter of name <replaceable>PARAMNAME</replaceable> and
 			value <replaceable>PARAMVALUE</replaceable>
 			where <replaceable>PARAMVALUE</replaceable> is a string rather than a
 			node identifier. <emphasis role="bold">Note:</emphasis> The string
@@ -396,8 +406,8 @@
 	<term><option>--xinclude</option></term>
 	<listitem>
 		<para>
-			Process the input document using the Xinclude specification. More
-			details on this can be found in the Xinclude
+			Process the input document using the XInclude specification. More
+			details on this can be found in the XInclude
 			specification: <ulink url="http://www.w3.org/TR/xinclude/"/>
 		</para>
 	</listitem>
@@ -413,19 +423,23 @@
 		<varlistentry>
 	<term><envar>SGML_CATALOG_FILES</envar></term>
 	<listitem>
-		<para>to be written ...</para>
+		<para><acronym>SGML</acronym> catalog behavior can be changed by redirecting
+			queries to the user's own set of catalogs. This can be done by setting
+			the <envar>SGML_CATALOG_FILES</envar> environment variable to a list
+			of catalogs. An empty one should deactivate loading the
+			default <filename>/etc/sgml/catalog</filename> catalog.
+		</para>
 	</listitem>
 		</varlistentry>
 
 		<varlistentry>
 	<term><envar>XML_CATALOG_FILES</envar></term>
 	<listitem>
-		<para>
-			Catalog behavior can be changed by redirecting queries to the user's
-			own set of catalogs. This can be done by setting
+		<para><acronym>XML</acronym> catalog behavior can be changed by redirecting
+			queries to the user's own set of catalogs. This can be done by setting
 			the <envar>XML_CATALOG_FILES</envar> environment variable to a list
 			of catalogs. An empty one should deactivate loading the
-			default <filename>/etc/xml/catalog</filename> default catalog.
+			default <filename>/etc/xml/catalog</filename> catalog.
 		</para>
 	</listitem>
 		</varlistentry>
@@ -436,7 +450,7 @@
 <refsect1 id="diagnostics">
 	<title>DIAGNOSTICS</title>
 	<para>
-		&xsltproc;'s return codes provide information that can be used when
+		&xsltproc; return codes provide information that can be used when
 		calling it from scripts.
 	</para>
 	<variablelist>
@@ -518,16 +532,41 @@
 	</listitem>
 		</varlistentry>
 
+		<varlistentry>
+	<term><errorcode>11</errorcode></term>
+	<listitem>
+		<para>Could not write the result to the output file</para>
+	</listitem>
+		</varlistentry>
+
 	</variablelist>
 </refsect1>
 
 <refsect1 id="seealso">
 	<title>SEE ALSO</title>
-	<para>
-		<citerefentry>
+	<para><citerefentry>
+			<refentrytitle>libxml</refentrytitle>
+			<manvolnum>3</manvolnum>
+		</citerefentry>, <citerefentry>
 			<refentrytitle>libxslt</refentrytitle>
 			<manvolnum>3</manvolnum>
 		</citerefentry>
+	</para>
+	<para>
+		More information can be found at
+		<itemizedlist>
+			<listitem>
+				<para><citerefentry>
+						<refentrytitle>libxml</refentrytitle>
+						<manvolnum>3</manvolnum>
+					</citerefentry> web page <ulink url="http://www.xmlsoft.org/"/>
+				</para>
+			</listitem>
+			<listitem>
+				<para>W3C <acronym>XSLT</acronym> page <ulink url="http://www.w3.org/TR/xslt"/>
+				</para>
+			</listitem>
+		</itemizedlist>
 	</para>
 </refsect1>
 

@@ -27,7 +27,7 @@
 #define MD5_DIGEST_LENGTH 16
 #define SHA1_DIGEST_LENGTH 20
 
-/* gcrypt rc4 can do 256 bit keys, but cryptoapi limit 
+/* gcrypt rc4 can do 256 bit keys, but cryptoapi limit
    seems to be 128 for the default provider */
 #define RC4_KEY_LENGTH 128
 
@@ -48,7 +48,7 @@
  * @hex: buffer to store hex version of blob
  * @hexlen: length of buffer to store hex version of blob
  *
- * Helper function which encodes a binary blob as hex. 
+ * Helper function which encodes a binary blob as hex.
  */
 static void
 exsltCryptoBin2Hex (const unsigned char *bin, int binlen,
@@ -140,7 +140,7 @@ exsltCryptoCryptoApiReportError (xmlXPathParserContextPtr ctxt,
     LocalFree (lpMsgBuf);
 }
 
-HCRYPTHASH
+static HCRYPTHASH
 exsltCryptoCryptoApiCreateHash (xmlXPathParserContextPtr ctxt,
 				HCRYPTPROV hCryptProv, ALG_ID algorithm,
 				const char *msg, unsigned int msglen,
@@ -203,7 +203,7 @@ exsltCryptoCryptoApiHash (xmlXPathParserContextPtr ctxt,
     CryptReleaseContext (hCryptProv, 0);
 }
 
-void
+static void
 exsltCryptoCryptoApiRc4Encrypt (xmlXPathParserContextPtr ctxt,
 				const unsigned char *key,
 				const unsigned char *msg, int msglen,
@@ -254,7 +254,7 @@ exsltCryptoCryptoApiRc4Encrypt (xmlXPathParserContextPtr ctxt,
     CryptReleaseContext (hCryptProv, 0);
 }
 
-void
+static void
 exsltCryptoCryptoApiRc4Decrypt (xmlXPathParserContextPtr ctxt,
 				const unsigned char *key,
 				const unsigned char *msg, int msglen,
@@ -317,6 +317,13 @@ exsltCryptoCryptoApiRc4Decrypt (xmlXPathParserContextPtr ctxt,
 #define PLATFORM_MD5 GCRY_MD_MD5
 #define PLATFORM_SHA1 GCRY_MD_SHA1
 
+#ifdef HAVE_SYS_TYPES_H
+# include <sys/types.h>
+#endif
+#ifdef HAVE_STDINT_H
+# include <stdint.h>
+#endif
+
 #ifdef HAVE_SYS_SELECT_H
 #include <sys/select.h>		/* needed by gcrypt.h 4 Jul 04 */
 #endif
@@ -350,7 +357,7 @@ exsltCryptoGcryptInit (void) {
  * @msglen: length of text to be hashed
  * @dest: buffer to place hash result
  *
- * Helper function which hashes a message using MD4, MD5, or SHA1. 
+ * Helper function which hashes a message using MD4, MD5, or SHA1.
  * using gcrypt
  */
 static void
@@ -588,11 +595,13 @@ exsltCryptoRc4EncryptFunction (xmlXPathParserContextPtr ctxt, int nargs) {
     int str_len = 0, bin_len = 0, hex_len = 0;
     xmlChar *key = NULL, *str = NULL, *padkey = NULL;
     xmlChar *bin = NULL, *hex = NULL;
+    xsltTransformContextPtr tctxt = NULL;
 
-    if ((nargs < 1) || (nargs > 3)) {
+    if (nargs != 2) {
 	xmlXPathSetArityError (ctxt);
 	return;
     }
+    tctxt = xsltXPathGetTransformContext(ctxt);
 
     str = xmlXPathPopString (ctxt);
     str_len = xmlUTF8Strlen (str);
@@ -604,7 +613,7 @@ exsltCryptoRc4EncryptFunction (xmlXPathParserContextPtr ctxt, int nargs) {
     }
 
     key = xmlXPathPopString (ctxt);
-    key_len = xmlUTF8Strlen (str);
+    key_len = xmlUTF8Strlen (key);
 
     if (key_len == 0) {
 	xmlXPathReturnEmptyString (ctxt);
@@ -613,15 +622,33 @@ exsltCryptoRc4EncryptFunction (xmlXPathParserContextPtr ctxt, int nargs) {
 	return;
     }
 
-    padkey = xmlMallocAtomic (RC4_KEY_LENGTH);
+    padkey = xmlMallocAtomic (RC4_KEY_LENGTH + 1);
+    if (padkey == NULL) {
+	xsltTransformError(tctxt, NULL, tctxt->inst,
+	    "exsltCryptoRc4EncryptFunction: Failed to allocate padkey\n");
+	tctxt->state = XSLT_STATE_STOPPED;
+	xmlXPathReturnEmptyString (ctxt);
+	goto done;
+    }
+    memset(padkey, 0, RC4_KEY_LENGTH + 1);
+
     key_size = xmlUTF8Strsize (key, key_len);
+    if ((key_size > RC4_KEY_LENGTH) || (key_size < 0)) {
+	xsltTransformError(tctxt, NULL, tctxt->inst,
+	    "exsltCryptoRc4EncryptFunction: key size too long or key broken\n");
+	tctxt->state = XSLT_STATE_STOPPED;
+	xmlXPathReturnEmptyString (ctxt);
+	goto done;
+    }
     memcpy (padkey, key, key_size);
-    memset (padkey + key_size, '\0', sizeof (padkey));
 
 /* encrypt it */
     bin_len = str_len;
     bin = xmlStrdup (str);
     if (bin == NULL) {
+	xsltTransformError(tctxt, NULL, tctxt->inst,
+	    "exsltCryptoRc4EncryptFunction: Failed to allocate string\n");
+	tctxt->state = XSLT_STATE_STOPPED;
 	xmlXPathReturnEmptyString (ctxt);
 	goto done;
     }
@@ -631,6 +658,9 @@ exsltCryptoRc4EncryptFunction (xmlXPathParserContextPtr ctxt, int nargs) {
     hex_len = str_len * 2 + 1;
     hex = xmlMallocAtomic (hex_len);
     if (hex == NULL) {
+	xsltTransformError(tctxt, NULL, tctxt->inst,
+	    "exsltCryptoRc4EncryptFunction: Failed to allocate result\n");
+	tctxt->state = XSLT_STATE_STOPPED;
 	xmlXPathReturnEmptyString (ctxt);
 	goto done;
     }
@@ -663,11 +693,13 @@ exsltCryptoRc4DecryptFunction (xmlXPathParserContextPtr ctxt, int nargs) {
     int str_len = 0, bin_len = 0, ret_len = 0;
     xmlChar *key = NULL, *str = NULL, *padkey = NULL, *bin =
 	NULL, *ret = NULL;
+    xsltTransformContextPtr tctxt = NULL;
 
-    if ((nargs < 1) || (nargs > 3)) {
+    if (nargs != 2) {
 	xmlXPathSetArityError (ctxt);
 	return;
     }
+    tctxt = xsltXPathGetTransformContext(ctxt);
 
     str = xmlXPathPopString (ctxt);
     str_len = xmlUTF8Strlen (str);
@@ -679,7 +711,7 @@ exsltCryptoRc4DecryptFunction (xmlXPathParserContextPtr ctxt, int nargs) {
     }
 
     key = xmlXPathPopString (ctxt);
-    key_len = xmlUTF8Strlen (str);
+    key_len = xmlUTF8Strlen (key);
 
     if (key_len == 0) {
 	xmlXPathReturnEmptyString (ctxt);
@@ -688,22 +720,52 @@ exsltCryptoRc4DecryptFunction (xmlXPathParserContextPtr ctxt, int nargs) {
 	return;
     }
 
-    padkey = xmlMallocAtomic (RC4_KEY_LENGTH);
+    padkey = xmlMallocAtomic (RC4_KEY_LENGTH + 1);
+    if (padkey == NULL) {
+	xsltTransformError(tctxt, NULL, tctxt->inst,
+	    "exsltCryptoRc4EncryptFunction: Failed to allocate padkey\n");
+	tctxt->state = XSLT_STATE_STOPPED;
+	xmlXPathReturnEmptyString (ctxt);
+	goto done;
+    }
+    memset(padkey, 0, RC4_KEY_LENGTH + 1);
     key_size = xmlUTF8Strsize (key, key_len);
+    if ((key_size > RC4_KEY_LENGTH) || (key_size < 0)) {
+	xsltTransformError(tctxt, NULL, tctxt->inst,
+	    "exsltCryptoRc4EncryptFunction: key size too long or key broken\n");
+	tctxt->state = XSLT_STATE_STOPPED;
+	xmlXPathReturnEmptyString (ctxt);
+	goto done;
+    }
     memcpy (padkey, key, key_size);
-    memset (padkey + key_size, '\0', sizeof (padkey));
 
 /* decode hex to binary */
     bin_len = str_len;
     bin = xmlMallocAtomic (bin_len);
+    if (bin == NULL) {
+	xsltTransformError(tctxt, NULL, tctxt->inst,
+	    "exsltCryptoRc4EncryptFunction: Failed to allocate string\n");
+	tctxt->state = XSLT_STATE_STOPPED;
+	xmlXPathReturnEmptyString (ctxt);
+	goto done;
+    }
     ret_len = exsltCryptoHex2Bin (str, str_len, bin, bin_len);
 
 /* decrypt the binary blob */
-    ret = xmlMallocAtomic (ret_len);
+    ret = xmlMallocAtomic (ret_len + 1);
+    if (ret == NULL) {
+	xsltTransformError(tctxt, NULL, tctxt->inst,
+	    "exsltCryptoRc4EncryptFunction: Failed to allocate result\n");
+	tctxt->state = XSLT_STATE_STOPPED;
+	xmlXPathReturnEmptyString (ctxt);
+	goto done;
+    }
     PLATFORM_RC4_DECRYPT (ctxt, padkey, bin, ret_len, ret, ret_len);
+    ret[ret_len] = 0;
 
     xmlXPathReturnString (ctxt, ret);
 
+done:
     if (key != NULL)
 	xmlFree (key);
     if (str != NULL)
@@ -740,6 +802,11 @@ exsltCryptoRegister (void) {
 }
 
 #else
+/**
+ * exsltCryptoRegister:
+ *
+ * Registers the EXSLT - Crypto module
+ */
 void
 exsltCryptoRegister (void) {
 }

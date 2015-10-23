@@ -1,103 +1,110 @@
-#sbs-git:slp/unmodified/libxslt libxslt 1.1.16 64ded0203040e8a50821c584ba754b988fc2ad6b
-Name:       libxslt
-Summary:    Library providing the Gnome XSLT engine
-Version: 1.1.16
-Release:    1
-Group:      System/Libraries
-License:    MIT v2 with Ad Clause License
-URL:        http://xmlsoft.org/XSLT/
-Source0:    %{name}-%{version}.tar.gz
-Patch0:     libxslt-build.patch
-Patch10:    libxslt-python-site-packages64.patch
-Requires(post): /sbin/ldconfig
-Requires(postun): /sbin/ldconfig
-BuildRequires:  pkgconfig(libxml-2.0) >= 2.6.27
-
+Name:           libxslt
+Version:        1.1.28
+Release:        1
+Summary:        XSL Transformation Library
+License:        MIT
+Group:          System/Libraries
+Url:            http://xmlsoft.org/XSLT/
+Source:         %{name}-%{version}.tar.bz2
+#X-Vcs-Url:     git://git.gnome.org/libxslt
+#Source2:        baselibs.conf
+Source3:        xslt-config.1.gz
+Source1001:     libxslt.manifest
+#BuildRequires:  libgcrypt-devel
+#BuildRequires:  libgpg-error-devel
+BuildRequires:  libtool
+BuildRequires:  libxml2-devel
+BuildRequires:  pkg-config
+#Patch1:         libxslt_aslr_20150408.patch
 
 %description
-This C library allows to transform XML files into other XML files
-(or HTML, text, ...) using the standard XSLT stylesheet transformation
-mechanism. To use it you need to have a version of libxml2 >= 2.6.27
-installed. The xsltproc command is a command line interface to the XSLT engine
+This C library allows you to transform XML files into other XML files
+(or HTML, text, and more) using the standard XSLT stylesheet
+transformation mechanism.
 
+It is based on libxml (version 2) for XML parsing, tree manipulation,
+and XPath support. It is written in plain C, making as few assumptions
+as possible and sticks closely to ANSI C/POSIX for easy embedding.
+Although not primarily designed with performance in mind, libxslt seems
+to be a relatively fast processor. It also includes full support for
+the EXSLT set of extension functions as well as some common extensions
+present in other XSLT engines.
 
 
 %package devel
-Summary:    Libraries, includes, etc. to embed the Gnome XSLT engine
-Group:      Development/Libraries
-Requires:   %{name} = %{version}-%{release}
+Summary:        Include Files and Libraries mandatory for Development
+Group:          System/Libraries
+Requires:       %{name}-tools = %version
+Requires:       libxslt = %{version}
+Requires:       glibc-devel
+#Requires:       libgcrypt-devel
+#Requires:       libgpg-error-devel
+#libxml is automatically required with pkgconfig
 
 %description devel
-This C library allows to transform XML files into other XML files
-(or HTML, text, ...) using the standard XSLT stylesheet transformation
-mechanism. To use it you need to have a version of libxml2 >= 2.6.27
-installed.
+This package contains all necessary include files and libraries needed
+to develop applications that require these.
 
+%package tools
+Summary:        Extended Stylesheet Language (XSL) Transformation utilities
+Group:          Development/Tools
+Provides:       xsltproc = %version-%release
 
-%package python
-Summary: Python bindings for the libxslt library
-Group: Development/Libraries
-Requires: libxslt = %{version}
-Requires: libxml2 >= 2.6.5
-Requires: libxml2-python >= 2.6.5
-Requires: python
-
-%description python
-The libxslt-python package contains a module that permits applications
-written in the Python programming language to use the interface
-supplied by the libxslt library to apply XSLT transformations.
-
-This library allows to parse sytlesheets, uses the libxml2-python
-to load and save XML and HTML files. Direct access to XPath and
-the XSLT transformation context are possible to extend the XSLT language
-with XPath functions written in Python.
-
+%description tools
+This package contains xsltproc, a command line interface to the XSLT engine.
 
 %prep
 %setup -q
-
-# libxslt-build.patch
-%patch0 -p1
-%patch10 -p1
+cp %{SOURCE1001} .
+#%patch1 -p1 -b .aslr
 
 %build
+#export CFLAGS="%optflags -fPIC"
+#export CXXFLAGS="${CXXFLAGS:-%optflags} -fPIC"
+%autogen --disable-static --with-pic --without-python
+%__make %{?_smp_mflags}
 
-%configure --disable-static --with-python=/usr
-
-make %{?jobs:-j%jobs}
+%check
+%if ! 0%{?qemu_user_space_build}
+%__make check
+%endif
 
 %install
-rm -rf %{buildroot}
-mkdir -p %{buildroot}/usr/share/license
-cp COPYING %{buildroot}/usr/share/license/%{name}
-
 %make_install
 
-%remove_docs
+# Unwanted doc stuff
+rm -fr %{buildroot}%{_datadir}/doc
 
-%post -p /sbin/ldconfig
+# the manual page is required
+install -ma=r '-t%{buildroot}%{_mandir}/man1' '%{SOURCE3}'
 
-%postun -p /sbin/ldconfig
+mkdir -p %{buildroot}/usr/share/license 60
+cp -af Copyright %{buildroot}/usr/share/license/%{name}
 
-%files
-%defattr(-,root,root,-)
-%manifest libxslt.manifest
+%post -n libxslt -p /sbin/ldconfig
+
+%postun -n libxslt -p /sbin/ldconfig
+
+%files -n libxslt
+%manifest %{name}.manifest
+%defattr(-, root, root)
 %{_libdir}/lib*.so.*
-%{_bindir}/xsltproc
-/usr/share/license/%{name}
+%{_datadir}/license/%{name}
 
 %files devel
-%defattr(-,root,root,-)
+%manifest %{name}.manifest
+%defattr(-, root, root)
 %{_libdir}/lib*.so
 %{_libdir}/*.sh
-%{_datadir}/aclocal/libxslt.m4
+%{_libdir}/pkgconfig/*.pc
 %{_includedir}/*
-/usr/bin/xslt-config
-%{_libdir}/pkgconfig/libxslt.pc
-%{_libdir}/pkgconfig/libexslt.pc
+%{_datadir}/aclocal/*
+%{_bindir}/xslt-config
+%doc %{_mandir}/man1/xslt-config.*
+%doc %{_mandir}/man3/*
 
-%files python
-%defattr(-,root,root,-)
-%manifest libxslt.manifest
-%{python_sitelib}/libxslt.py
-%{python_sitelib}/libxsltmod.so
+%files tools
+%manifest %{name}.manifest
+%defattr(-,root,root)
+%{_bindir}/xsltproc
+%doc %{_mandir}/man1/xsltproc.*

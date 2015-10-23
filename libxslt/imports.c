@@ -41,6 +41,7 @@
 #include "xslt.h"
 #include "xsltInternals.h"
 #include "xsltutils.h"
+#include "preproc.h"
 #include "imports.h"
 #include "documents.h"
 #include "security.h"
@@ -58,10 +59,10 @@
  * @style: the stylesheet being imported by the master
  *
  * normalize the comp steps for the stylesheet being imported
- * by the master, together with any imports within that. 
+ * by the master, together with any imports within that.
  *
  */
-static void xsltFixImportedCompSteps(xsltStylesheetPtr master, 
+static void xsltFixImportedCompSteps(xsltStylesheetPtr master,
 			xsltStylesheetPtr style) {
     xsltStylesheetPtr res;
     xmlHashScan(style->templatesHash,
@@ -229,7 +230,16 @@ xsltParseStylesheetInclude(xsltStylesheetPtr style, xmlNodePtr cur) {
 	    "xsl:include : unable to load %s\n", URI);
 	goto error;
     }
-
+#ifdef XSLT_REFACTORED
+    if (IS_XSLT_ELEM_FAST(cur) && (cur->psvi != NULL)) {
+	((xsltStyleItemIncludePtr) cur->psvi)->include = include;
+    } else {
+	xsltTransformError(NULL, style, cur,
+	    "Internal error: (xsltParseStylesheetInclude) "
+	    "The xsl:include element was not compiled.\n", URI);
+	style->errors++;
+    }
+#endif
     oldDoc = style->doc;
     style->doc = include->doc;
     /* chain to stylesheet for recursion checking */
@@ -237,6 +247,12 @@ xsltParseStylesheetInclude(xsltStylesheetPtr style, xmlNodePtr cur) {
     style->includes = include;
     oldNopreproc = style->nopreproc;
     style->nopreproc = include->preproc;
+    /*
+    * TODO: This will change some values of the
+    *  including stylesheet with every included module
+    *  (e.g. excluded-result-prefixes)
+    *  We need to strictly seperate such stylesheet-owned values.
+    */
     result = xsltParseStylesheetProcess(style, include->doc);
     style->nopreproc = oldNopreproc;
     include->preproc = 1;
@@ -332,6 +348,11 @@ xsltFindElemSpaceHandling(xsltTransformContextPtr ctxt, xmlNodePtr node) {
 	if (node->ns != NULL) {
 	    val = (const xmlChar *)
 	      xmlHashLookup2(style->stripSpaces, node->name, node->ns->href);
+            if (val == NULL) {
+                val = (const xmlChar *)
+                    xmlHashLookup2(style->stripSpaces, BAD_CAST "*",
+                                   node->ns->href);
+            }
 	} else {
 	    val = (const xmlChar *)
 		  xmlHashLookup2(style->stripSpaces, node->name, NULL);
@@ -341,7 +362,7 @@ xsltFindElemSpaceHandling(xsltTransformContextPtr ctxt, xmlNodePtr node) {
 		return(1);
 	    if (xmlStrEqual(val, (xmlChar *) "preserve"))
 		return(0);
-	} 
+	}
 	if (style->stripAll == 1)
 	    return(1);
 	if (style->stripAll == -1)
@@ -359,6 +380,13 @@ xsltFindElemSpaceHandling(xsltTransformContextPtr ctxt, xmlNodePtr node) {
  * @nameURI: the template name URI
  *
  * Finds the named template, apply import precedence rule.
+ * REVISIT TODO: We'll change the nameURI fields of
+ *  templates to be in the string dict, so if the
+ *  specified @nameURI is in the same dict, then use pointer
+ *  comparison. Check if this can be done in a sane way.
+ *  Maybe this function is not needed internally at
+ *  transformation-time if we hard-wire the called templates
+ *  to the caller.
  *
  * Returns the xsltTemplatePtr or NULL if not found
  */

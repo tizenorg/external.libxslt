@@ -89,7 +89,7 @@ while test $# -gt 0; do
     shift
 done
 
-the_libs="@XSLT_LIBDIR@ @XSLT_LIBS@"
+the_libs="-lxslt"
 if test "$includedir" != "/usr/include"; then
     the_flags="$the_flags -I$includedir `@XML_CONFIG@ --cflags`"
 else
